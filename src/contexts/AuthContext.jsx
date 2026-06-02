@@ -41,9 +41,10 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }
 
-  async function signUp(email, password, username, displayName) {
+  async function signUp(username, password, displayName) {
+    const fakeEmail = `${username}@pladoxa.app`
     const { error } = await supabase.auth.signUp({
-      email,
+      email: fakeEmail,
       password,
       options: {
         data: { username, display_name: displayName },
@@ -52,8 +53,9 @@ export function AuthProvider({ children }) {
     return error
   }
 
-  async function signIn(email, password) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  async function signIn(username, password) {
+    const fakeEmail = `${username}@pladoxa.app`
+    const { error } = await supabase.auth.signInWithPassword({ email: fakeEmail, password })
     return error
   }
 
