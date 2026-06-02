@@ -102,10 +102,11 @@ function ModDashboard() {
 
   async function deleteOpinion(id) {
     if (!confirm('Delete this opinion and all its replies?')) return
-    // Delete replies first to avoid FK constraint
+    // Delete related rows first to avoid FK constraints
+    await adminSupabase.from('votes').delete().eq('opinion_id', id)
     await adminSupabase.from('debate_replies').delete().eq('opinion_id', id)
     const { error } = await adminSupabase.from('opinions').delete().eq('id', id)
-    if (error) showToast('Failed to delete.', 'error')
+    if (error) { showToast('Failed to delete: ' + error.message, 'error'); console.error(error) }
     else { showToast('Opinion deleted.'); loadOpinions() }
   }
 
