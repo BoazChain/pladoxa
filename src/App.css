@@ -41,17 +41,48 @@
   white-space: nowrap;
 }
 
-.signin-btn {
-  background: var(--soft);
-  color: white;
-  border: none;
-  padding: 8px 16px;
+.sign-in-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  padding: 7px 14px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 
+.sign-in-btn:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+.sign-out-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.sign-out-btn:hover { color: var(--text-2); }
+
+.nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.nav-username {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .new-opinion-btn:hover {
   background: var(--accent-hover);
@@ -644,6 +675,46 @@
 .toast.agree { border-color: var(--agree); color: var(--agree); }
 .toast.disagree { border-color: var(--disagree); color: var(--disagree); }
 .toast.success { border-color: var(--accent); color: var(--accent); }
+
+.auth-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+
+.auth-input:focus { border-color: var(--accent); }
+.auth-input::placeholder { color: var(--text-3); }
+
+.auth-error {
+  font-size: 13px;
+  color: var(--disagree);
+  background: var(--disagree-dim);
+  border: 1px solid rgba(248,113,113,0.25);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+
+.auth-switch {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.toast.error { border-color: var(--disagree); color: var(--disagree); }
 
 @media (max-width: 720px) {
   .layout { padding: 16px 12px; }

@@ -1,221 +1,224 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { supabase } from './lib/supabase'
 import './App.css'
-
-const SEED = [
-  {
-    id: 1,
-    user: { name: 'Maya Chen', handle: 'mayaopines', initials: 'MC', color: '#7c3aed' },
-    intensity: 'hard',
-    topic: 'Tech',
-    text: "Hot take.... remote work is better than in person work",
-    agrees: 847,
-    disagrees: 312,
-    debates: 89,
-    ts: '2h ago',
-    vote: null,
-    replies: [
-      {
-        id: 11,
-        user: { name: 'Alex Rivera', initials: 'AR', color: '#2563eb' },
-        text: "Serendipitous hallway conversations that spark real ideas just don't happen over Slack.",
-        time: '1h ago',
-      },
-      {
-        id: 12,
-        user: { name: 'Sam Park', initials: 'SP', color: '#059669' },
-        text: "Company culture was always a dressed-up word for surveillance and conformity. Good riddance.",
-        time: '45m ago',
-      },
-    ],
-  },
-  {
-    id: 2,
-    user: { name: 'Jordan Plex', handle: 'jplex', initials: 'JP', color: '#dc2626' },
-    intensity: 'soft',
-    topic: 'Food',
-    text: "Pineapple on pizza is genuinely good and people only hate it because they think theyre supposed to",
-    agrees: 1203,
-    disagrees: 2891,
-    debates: 445,
-    ts: '4h ago',
-    vote: null,
-    replies: [
-      {
-        id: 21,
-        user: { name: 'Felix Wu', initials: 'FW', color: '#7c3aed' },
-        text: "The moisture from pineapple makes the crust soggy",
-        time: '3h ago',
-      },
-    ],
-  },
-  {
-    id: 3,
-    user: { name: 'Priya Nair', handle: 'priyatakes', initials: 'PN', color: '#0891b2' },
-    intensity: 'hard',
-    topic: 'Society',
-    text: "Ketchup isnt as good as hot sauce",
-    agrees: 3421,
-    disagrees: 892,
-    debates: 267,
-    ts: '6h ago',
-    vote: null,
-    replies: [],
-  },
-  {
-    id: 4,
-    user: { name: 'Theo Black', handle: 'theoblack', initials: 'TB', color: '#d97706' },
-    intensity: 'soft',
-    topic: 'Entertainment',
-    text: "Movie theatres gotta go, i can watch the same thing at home on some russian website and buy popcorn for a dollar",
-    agrees: 5678,
-    disagrees: 1234,
-    debates: 198,
-    ts: '8h ago',
-    vote: null,
-    replies: [],
-  },
-  {
-    id: 5,
-    user: { name: 'Zara Ahmed', handle: 'zaraopines', initials: 'ZA', color: '#16a34a' },
-    intensity: 'hard',
-    topic: 'Philosophy',
-    text: "\"Everything happens for a reason\" is one of the most harmful beliefs EVER tell me im wrong",
-    agrees: 7823,
-    disagrees: 2341,
-    debates: 892,
-    ts: '12h ago',
-    vote: null,
-    replies: [
-      {
-        id: 51,
-        user: { name: 'Omar Khalid', initials: 'OK', color: '#dc2626' },
-        text: "yeah ur f'ed up",
-        time: '10h ago',
-      },
-      {
-        id: 52,
-        user: { name: 'Lucy Stone', initials: 'LS', color: '#7c3aed' },
-        text: "idkkk broooooooooo",
-        time: '9h ago',
-      },
-    ],
-  },
-  {
-    id: 6,
-    user: { name: 'Dev Kumar', handle: 'devkumar', initials: 'DK', color: '#8b5cf6' },
-    intensity: 'soft',
-    topic: 'Tech',
-    text: "I think nokias are better than iphones and samsungs",
-    agrees: 2341,
-    disagrees: 3456,
-    debates: 1234,
-    ts: '1d ago',
-    vote: null,
-    replies: [],
-  },
-  {
-    id: 7,
-    user: { name: 'Nora Walsh', handle: 'noraopines', initials: 'NW', color: '#be185d' },
-    intensity: 'hard',
-    topic: 'Culture',
-    text: "WE HUSTLE EVERY DAYYYY YOOOOOOO",
-    agrees: 4512,
-    disagrees: 1023,
-    debates: 334,
-    ts: '2d ago',
-    vote: null,
-    replies: [],
-  },
-]
 
 const TOPICS = ['All', 'Tech', 'Society', 'Food', 'Philosophy', 'Entertainment', 'Culture', 'Politics', 'Science']
 
 export default function App() {
-  const [opinions, setOpinions] = useState(SEED)
+  return (
+    <AuthProvider>
+      <Feed />
+    </AuthProvider>
+  )
+}
+
+function Feed() {
+  const { user, profile, loading: authLoading, signOut } = useAuth()
+  const [opinions, setOpinions] = useState([])
+  const [userVotes, setUserVotes] = useState({})
   const [filter, setFilter] = useState('All')
   const [sort, setSort] = useState('hot')
   const [createOpen, setCreateOpen] = useState(false)
   const [debateId, setDebateId] = useState(null)
+  const [authOpen, setAuthOpen] = useState(false)
   const [toast, setToast] = useState(null)
+  const [fetching, setFetching] = useState(true)
+
+  useEffect(() => {
+    loadOpinions()
+  }, [])
+
+  useEffect(() => {
+    if (user) loadUserVotes()
+    else setUserVotes({})
+  }, [user])
+
+  async function loadOpinions() {
+    setFetching(true)
+    const { data, error } = await supabase
+      .from('opinions')
+      .select(`*, profiles(display_name, username, avatar_color)`)
+      .order('created_at', { ascending: false })
+
+    if (!error && data) {
+      setOpinions(data.map(normalizeOpinion))
+    }
+    setFetching(false)
+  }
+
+  async function loadUserVotes() {
+    const { data } = await supabase
+      .from('votes')
+      .select('opinion_id, vote_type')
+      .eq('user_id', user.id)
+
+    if (data) {
+      const map = {}
+      data.forEach(v => { map[v.opinion_id] = v.vote_type })
+      setUserVotes(map)
+    }
+  }
+
+  function normalizeOpinion(row) {
+    return {
+      id: row.id,
+      text: row.text,
+      intensity: row.intensity,
+      topic: row.topic,
+      ts: timeAgo(row.created_at),
+      agrees: row.agrees_count,
+      disagrees: row.disagrees_count,
+      debates: row.debates_count,
+      user: {
+        name: row.profiles?.display_name ?? 'Unknown',
+        handle: row.profiles?.username ?? 'unknown',
+        initials: initials(row.profiles?.display_name ?? '?'),
+        color: row.profiles?.avatar_color ?? '#8b5cf6',
+      },
+      replies: [],
+    }
+  }
 
   function showToast(msg, type = '') {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 2500)
   }
 
-  function vote(id, type) {
-    setOpinions(prev => prev.map(op => {
-      if (op.id !== id) return op
-      if (op.vote === type) {
+  function requireAuth(action) {
+    if (!user) { setAuthOpen(true); return false }
+    return true
+  }
+
+  async function vote(opinionId, type) {
+    if (!requireAuth()) return
+
+    const prev = userVotes[opinionId]
+    const unvoting = prev === type
+
+    setUserVotes(v => {
+      const next = { ...v }
+      if (unvoting) delete next[opinionId]
+      else next[opinionId] = type
+      return next
+    })
+
+    setOpinions(ops => ops.map(op => {
+      if (op.id !== opinionId) return op
+      let a = op.agrees
+      let d = op.disagrees
+      if (prev === 'agree') a--
+      if (prev === 'disagree') d--
+      if (!unvoting && type === 'agree') a++
+      if (!unvoting && type === 'disagree') d++
+      return { ...op, agrees: a, disagrees: d }
+    }))
+
+    const { error } = await supabase.rpc('handle_vote', {
+      p_opinion_id: opinionId,
+      p_user_id: user.id,
+      p_vote_type: type,
+    })
+
+    if (error) {
+      loadOpinions()
+      loadUserVotes()
+      showToast('Something went wrong.', 'error')
+    } else {
+      if (unvoting) showToast('Vote removed.')
+      else if (type === 'agree') showToast('You agreed with this.', 'agree')
+      else showToast('You disagreed with this.', 'disagree')
+    }
+  }
+
+  async function create(data) {
+    if (!requireAuth()) return
+
+    const { error } = await supabase.from('opinions').insert({
+      user_id: user.id,
+      text: data.text,
+      intensity: data.intensity,
+      topic: data.topic,
+    })
+
+    if (error) {
+      showToast('Failed to post opinion.', 'error')
+    } else {
+      setCreateOpen(false)
+      showToast('Opinion dropped.', 'success')
+      loadOpinions()
+    }
+  }
+
+  async function loadReplies(opinionId) {
+    const { data } = await supabase
+      .from('debate_replies')
+      .select(`*, profiles(display_name, avatar_color)`)
+      .eq('opinion_id', opinionId)
+      .order('created_at', { ascending: true })
+
+    if (data) {
+      setOpinions(ops => ops.map(op => {
+        if (op.id !== opinionId) return op
         return {
           ...op,
-          vote: null,
-          agrees: type === 'agree' ? op.agrees - 1 : op.agrees,
-          disagrees: type === 'disagree' ? op.disagrees - 1 : op.disagrees,
+          replies: data.map(r => ({
+            id: r.id,
+            text: r.text,
+            time: timeAgo(r.created_at),
+            user: {
+              name: r.profiles?.display_name ?? 'Unknown',
+              initials: initials(r.profiles?.display_name ?? '?'),
+              color: r.profiles?.avatar_color ?? '#8b5cf6',
+            },
+          })),
         }
-      }
-      const fromAgree = op.vote === 'agree'
-      const fromDis = op.vote === 'disagree'
-      return {
-        ...op,
-        vote: type,
-        agrees: type === 'agree' ? op.agrees + 1 : fromAgree ? op.agrees - 1 : op.agrees,
-        disagrees: type === 'disagree' ? op.disagrees + 1 : fromDis ? op.disagrees - 1 : op.disagrees,
-      }
-    }))
-    if (type === 'agree') showToast('You agreed with this.', 'agree')
-    else showToast('You disagreed with this.', 'disagree')
-  }
-
-  // function createAcc() {
-  //   const newacc = {
-  //     id: Date.now(),
-  //     user: { name: prompt("TEST PURPOSE input name"), handle: 'you', initials: 'YO', color: '#8b5cf6' }
-  //   }
-  // }
-
-  function create(data) {
-    const newOp = {
-      ...data,
-      id: Date.now(),
-      user: { name: 'You', handle: 'you', initials: 'YO', color: '#8b5cf6' },
-      agrees: 0, disagrees: 0, debates: 0,
-      ts: 'just now',
-      vote: null,
-      replies: [],
+      }))
     }
-    setOpinions(prev => [newOp, ...prev])
-    setCreateOpen(false)
-    showToast('Opinion dropped.', 'success')
   }
 
-  function addReply(opId, text) {
-    setOpinions(prev => prev.map(op => {
-      if (op.id !== opId) return op
-      return {
-        ...op,
-        debates: op.debates + 1,
-        replies: [
-          ...op.replies,
-          { id: Date.now(), user: { name: 'You', initials: 'YO', color: '#8b5cf6' }, text, time: 'just now' },
-        ],
-      }
-    }))
-    showToast('You entered the debate.', 'success')
+  async function addReply(opinionId, text) {
+    if (!requireAuth()) return
+
+    const { error } = await supabase.from('debate_replies').insert({
+      opinion_id: opinionId,
+      user_id: user.id,
+      text,
+    })
+
+    if (error) {
+      showToast('Failed to post reply.', 'error')
+    } else {
+      await supabase
+        .from('opinions')
+        .update({ debates_count: (opinions.find(o => o.id === opinionId)?.debates ?? 0) + 1 })
+        .eq('id', opinionId)
+
+      showToast('You entered the debate.', 'success')
+      loadReplies(opinionId)
+      setOpinions(ops => ops.map(op =>
+        op.id === opinionId ? { ...op, debates: op.debates + 1 } : op
+      ))
+    }
   }
 
   const debateOp = opinions.find(op => op.id === debateId)
 
   const filtered = opinions.filter(op => filter === 'All' || op.topic === filter)
   const sorted = [...filtered].sort((a, b) => {
-    if (sort === 'new') return b.id - a.id
+    if (sort === 'new') return 0
     if (sort === 'controversial') return b.debates - a.debates
     return (b.agrees + b.debates * 2) - (a.agrees + a.debates * 2)
   })
 
   return (
     <div>
-      <Navbar onNew={() => setCreateOpen(true)} />
+      <Navbar
+        profile={profile}
+        onNew={() => user ? setCreateOpen(true) : setAuthOpen(true)}
+        onAuth={() => setAuthOpen(true)}
+        onSignOut={signOut}
+      />
 
       <div className="layout">
         <main className="feed-area">
@@ -245,49 +248,78 @@ export default function App() {
           </div>
 
           <div className="feed">
-            {sorted.length === 0 ? (
+            {fetching || authLoading ? (
+              <div className="feed-empty">Loading...</div>
+            ) : sorted.length === 0 ? (
               <div className="feed-empty">No opinions here yet. Drop the first one.</div>
             ) : sorted.map(op => (
               <OpinionCard
                 key={op.id}
                 op={op}
+                vote={userVotes[op.id] ?? null}
                 onVote={type => vote(op.id, type)}
-                onDebate={() => setDebateId(op.id)}
+                onDebate={() => {
+                  setDebateId(op.id)
+                  loadReplies(op.id)
+                }}
               />
             ))}
           </div>
         </main>
       </div>
 
-      <button className="fab" onClick={() => setCreateOpen(true)} title="Drop an opinion">+</button>
+      <button className="fab" onClick={() => user ? setCreateOpen(true) : setAuthOpen(true)} title="Drop an opinion">+</button>
 
       {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onCreate={create} />}
+
       {debateId && debateOp && (
         <DebateModal
           op={debateOp}
           onClose={() => setDebateId(null)}
           onReply={text => addReply(debateId, text)}
+          loggedIn={!!user}
+          onAuthNeeded={() => { setDebateId(null); setAuthOpen(true) }}
         />
       )}
+
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
+
       {toast && <div className={`toast${toast.type ? ' ' + toast.type : ''}`}>{toast.msg}</div>}
     </div>
   )
 }
 
-function Navbar({ onNew }) {
+function Navbar({ profile, onNew, onAuth, onSignOut }) {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
         <span className="brand-name">pladoxa</span>
         <span className="navbar-tagline">drop your take.</span>
-        <button className="new-opinion-btn" onClick={onNew}>+ New Opinion</button>
-        <button className="signin-btn">Sign Up</button>
+        <div className="navbar-actions">
+          {profile ? (
+            <>
+              <div className="nav-profile">
+                <div className="avatar avatar-sm" style={{ background: profile.avatar_color }}>
+                  {initials(profile.display_name)}
+                </div>
+                <span className="nav-username">@{profile.username}</span>
+              </div>
+              <button className="new-opinion-btn" onClick={onNew}>+ New Opinion</button>
+              <button className="sign-out-btn" onClick={onSignOut}>Sign out</button>
+            </>
+          ) : (
+            <>
+              <button className="sign-in-btn" onClick={onAuth}>Sign in</button>
+              <button className="new-opinion-btn" onClick={onNew}>+ New Opinion</button>
+            </>
+          )}
+        </div>
       </div>
     </nav>
   )
 }
 
-function OpinionCard({ op, onVote, onDebate }) {
+function OpinionCard({ op, vote, onVote, onDebate }) {
   const total = op.agrees + op.disagrees
   const pct = total > 0 ? Math.round((op.agrees / total) * 100) : 50
 
@@ -324,7 +356,7 @@ function OpinionCard({ op, onVote, onDebate }) {
 
       <div className="card-actions">
         <button
-          className={`action-btn agree-btn${op.vote === 'agree' ? ' voted' : ''}`}
+          className={`action-btn agree-btn${vote === 'agree' ? ' voted' : ''}`}
           onClick={() => onVote('agree')}
         >
           <span className="btn-icon">👍</span>
@@ -332,7 +364,7 @@ function OpinionCard({ op, onVote, onDebate }) {
           <span className="btn-label">Agree</span>
         </button>
         <button
-          className={`action-btn disagree-btn${op.vote === 'disagree' ? ' voted' : ''}`}
+          className={`action-btn disagree-btn${vote === 'disagree' ? ' voted' : ''}`}
           onClick={() => onVote('disagree')}
         >
           <span className="btn-icon">👎</span>
@@ -353,11 +385,14 @@ function CreateModal({ onClose, onCreate }) {
   const [text, setText] = useState('')
   const [intensity, setIntensity] = useState('soft')
   const [topic, setTopic] = useState('Tech')
+  const [submitting, setSubmitting] = useState(false)
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault()
-    if (!text.trim()) return
-    onCreate({ text: text.trim(), intensity, topic })
+    if (!text.trim() || submitting) return
+    setSubmitting(true)
+    await onCreate({ text: text.trim(), intensity, topic })
+    setSubmitting(false)
   }
 
   return (
@@ -381,19 +416,11 @@ function CreateModal({ onClose, onCreate }) {
           <div className="form-row">
             <div className="intensity-group">
               <span className="field-label">Intensity</span>
-              <button
-                type="button"
-                className={`int-btn${intensity === 'soft' ? ' active-soft' : ''}`}
-                onClick={() => setIntensity('soft')}
-              >
-                Soft Take
+              <button type="button" className={`int-btn${intensity === 'soft' ? ' active-soft' : ''}`} onClick={() => setIntensity('soft')}>
+                💭 Soft Take
               </button>
-              <button
-                type="button"
-                className={`int-btn${intensity === 'hard' ? ' active-hard' : ''}`}
-                onClick={() => setIntensity('hard')}
-              >
-                Hard Take
+              <button type="button" className={`int-btn${intensity === 'hard' ? ' active-hard' : ''}`} onClick={() => setIntensity('hard')}>
+                🔥 Hard Take
               </button>
             </div>
           </div>
@@ -401,11 +428,7 @@ function CreateModal({ onClose, onCreate }) {
           <div className="form-row">
             <div className="topic-sel-group">
               <span className="field-label">Topic</span>
-              <select
-                className="topic-sel"
-                value={topic}
-                onChange={e => setTopic(e.target.value)}
-              >
+              <select className="topic-sel" value={topic} onChange={e => setTopic(e.target.value)}>
                 {TOPICS.filter(t => t !== 'All').map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
@@ -413,8 +436,8 @@ function CreateModal({ onClose, onCreate }) {
             </div>
           </div>
 
-          <button type="submit" className="submit-btn" disabled={!text.trim()}>
-            Post
+          <button type="submit" className="submit-btn" disabled={!text.trim() || submitting}>
+            {submitting ? 'Posting...' : 'Drop It 🔥'}
           </button>
         </form>
       </div>
@@ -422,14 +445,18 @@ function CreateModal({ onClose, onCreate }) {
   )
 }
 
-function DebateModal({ op, onClose, onReply }) {
+function DebateModal({ op, onClose, onReply, loggedIn, onAuthNeeded }) {
   const [text, setText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault()
-    if (!text.trim()) return
-    onReply(text.trim())
+    if (!text.trim() || submitting) return
+    if (!loggedIn) { onAuthNeeded(); return }
+    setSubmitting(true)
+    await onReply(text.trim())
     setText('')
+    setSubmitting(false)
   }
 
   return (
@@ -472,18 +499,148 @@ function DebateModal({ op, onClose, onReply }) {
           <form className="reply-form" onSubmit={submit}>
             <textarea
               className="reply-textarea"
-              placeholder="Make your case..."
+              placeholder={loggedIn ? 'Make your case...' : 'Sign in to join the debate.'}
               value={text}
               onChange={e => setText(e.target.value)}
               maxLength={280}
-              autoFocus
+              disabled={!loggedIn}
             />
-            <button type="submit" className="submit-btn" disabled={!text.trim()}>
-              Enter Debate
+            <button type="submit" className="submit-btn" disabled={!text.trim() || submitting}>
+              {submitting ? 'Posting...' : loggedIn ? 'Enter Debate' : 'Sign in to debate'}
             </button>
           </form>
         </div>
       </div>
     </div>
   )
+}
+
+function AuthModal({ onClose }) {
+  const { signIn, signUp } = useAuth()
+  const [mode, setMode] = useState('signin')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    setError('')
+    setSubmitting(true)
+
+    if (mode === 'signin') {
+      const err = await signIn(email, password)
+      if (err) setError(err.message)
+      else onClose()
+    } else {
+      if (!username.match(/^[a-z0-9_]{3,20}$/)) {
+        setError('Username must be 3-20 characters: letters, numbers, underscores only.')
+        setSubmitting(false)
+        return
+      }
+      const err = await signUp(email, password, username, displayName)
+      if (err) setError(err.message)
+      else setDone(true)
+    }
+
+    setSubmitting(false)
+  }
+
+  if (done) {
+    return (
+      <div className="modal-backdrop" onClick={onClose}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal-head">
+            <span className="modal-title">Check your email</span>
+            <button className="modal-close" onClick={onClose}>x</button>
+          </div>
+          <div className="create-body">
+            <p style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.6 }}>
+              We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account, then come back and sign in.
+            </p>
+            <button className="submit-btn" onClick={onClose}>Got it</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">{mode === 'signin' ? 'Sign in' : 'Create account'}</span>
+          <button className="modal-close" onClick={onClose}>x</button>
+        </div>
+        <form className="create-body" onSubmit={submit}>
+          {mode === 'signup' && (
+            <>
+              <input
+                className="auth-input"
+                type="text"
+                placeholder="Display name"
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                required
+              />
+              <input
+                className="auth-input"
+                type="text"
+                placeholder="Username (letters, numbers, _)"
+                value={username}
+                onChange={e => setUsername(e.target.value.toLowerCase())}
+                required
+              />
+            </>
+          )}
+          <input
+            className="auth-input"
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+          <input
+            className="auth-input"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            minLength={6}
+          />
+
+          {error && <p className="auth-error">{error}</p>}
+
+          <button type="submit" className="submit-btn" disabled={submitting}>
+            {submitting ? '...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+          </button>
+
+          <p className="auth-switch">
+            {mode === 'signin' ? (
+              <>No account? <button type="button" className="auth-link" onClick={() => { setMode('signup'); setError('') }}>Sign up</button></>
+            ) : (
+              <>Already have one? <button type="button" className="auth-link" onClick={() => { setMode('signin'); setError('') }}>Sign in</button></>
+            )}
+          </p>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function initials(name) {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+}
+
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - new Date(ts)) / 1000)
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
 }
