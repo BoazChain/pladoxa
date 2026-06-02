@@ -518,13 +518,11 @@ function DebateModal({ op, onClose, onReply, loggedIn, onAuthNeeded }) {
 function AuthModal({ onClose }) {
   const { signIn, signUp } = useAuth()
   const [mode, setMode] = useState('signin')
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [done, setDone] = useState(false)
 
   async function submit(e) {
     e.preventDefault()
@@ -532,8 +530,8 @@ function AuthModal({ onClose }) {
     setSubmitting(true)
 
     if (mode === 'signin') {
-      const err = await signIn(email, password)
-      if (err) setError(err.message)
+      const err = await signIn(username, password)
+      if (err) setError('Invalid username or password.')
       else onClose()
     } else {
       if (!username.match(/^[a-z0-9_]{3,20}$/)) {
@@ -541,31 +539,12 @@ function AuthModal({ onClose }) {
         setSubmitting(false)
         return
       }
-      const err = await signUp(email, password, username, displayName)
+      const err = await signUp(username, password, displayName)
       if (err) setError(err.message)
-      else setDone(true)
+      else onClose()
     }
 
     setSubmitting(false)
-  }
-
-  if (done) {
-    return (
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className="modal" onClick={e => e.stopPropagation()}>
-          <div className="modal-head">
-            <span className="modal-title">Check your email</span>
-            <button className="modal-close" onClick={onClose}>x</button>
-          </div>
-          <div className="create-body">
-            <p style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.6 }}>
-              We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account, then come back and sign in.
-            </p>
-            <button className="submit-btn" onClick={onClose}>Got it</button>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -577,31 +556,21 @@ function AuthModal({ onClose }) {
         </div>
         <form className="create-body" onSubmit={submit}>
           {mode === 'signup' && (
-            <>
-              <input
-                className="auth-input"
-                type="text"
-                placeholder="Display name"
-                value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
-                required
-              />
-              <input
-                className="auth-input"
-                type="text"
-                placeholder="Username (letters, numbers, _)"
-                value={username}
-                onChange={e => setUsername(e.target.value.toLowerCase())}
-                required
-              />
-            </>
+            <input
+              className="auth-input"
+              type="text"
+              placeholder="Display name"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              required
+            />
           )}
           <input
             className="auth-input"
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={e => setUsername(e.target.value.toLowerCase())}
             required
           />
           <input
