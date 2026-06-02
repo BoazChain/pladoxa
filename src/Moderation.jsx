@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
-import { supabase } from './lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 const MOD_PASSWORD = import.meta.env.VITE_MOD_PASSWORD || 'admin123'
+
+// Service role client — bypasses RLS for mod actions
+const adminSupabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_SERVICE_KEY
+)
 
 export default function Moderation() {
   const [authed, setAuthed] = useState(false)
@@ -10,11 +16,8 @@ export default function Moderation() {
 
   function tryLogin(e) {
     e.preventDefault()
-    if (pw === MOD_PASSWORD) {
-      setAuthed(true)
-    } else {
-      setPwError('Incorrect password.')
-    }
+    if (pw === MOD_PASSWORD) setAuthed(true)
+    else setPwError('Incorrect password.')
   }
 
   if (!authed) {
@@ -48,13 +51,15 @@ export default function Moderation() {
 function ModDashboard() {
   const [tab, setTab] = useState('opinions')
   const [opinions, setOpinions] = useState([])
+  const [debates, setDebates] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
     if (tab === 'opinions') loadOpinions()
-    if (tab === 'users') loadUsers()
+    else if (tab === 'debates') loadDebates()
+    else if (tab === 'users') loadUsers()
   }, [tab])
 
   function showToast(msg, type = '') {
@@ -64,34 +69,56 @@ function ModDashboard() {
 
   async function loadOpinions() {
     setLoading(true)
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('opinions')
       .select('*, profiles(display_name, username)')
       .order('created_at', { ascending: false })
-    if (!error) setOpinions(data)
+    if (!error && data) setOpinions(data)
+    else if (error) showToast('Failed to load opinions.', 'error')
+    setLoading(false)
+  }
+
+  async function loadDebates() {
+    setLoading(true)
+    const { data, error } = await adminSupabase
+      .from('debate_replies')
+      .select('*, profiles(display_name, username), opinions(text)')
+      .order('created_at', { ascending: false })
+    if (!error && data) setDebates(data)
+    else if (error) showToast('Failed to load debates.', 'error')
     setLoading(false)
   }
 
   async function loadUsers() {
     setLoading(true)
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
-    if (!error) setUsers(data)
+    if (!error && data) setUsers(data)
+    else if (error) showToast('Failed to load users.', 'error')
     setLoading(false)
   }
 
   async function deleteOpinion(id) {
-    if (!confirm('Delete this opinion?')) return
-    const { error } = await supabase.from('opinions').delete().eq('id', id)
+    if (!confirm('Delete this opinion and all its replies?')) return
+    // Delete replies first to avoid FK constraint
+    await adminSupabase.from('debate_replies').delete().eq('opinion_id', id)
+    const { error } = await adminSupabase.from('opinions').delete().eq('id', id)
     if (error) showToast('Failed to delete.', 'error')
     else { showToast('Opinion deleted.'); loadOpinions() }
   }
 
+  async function deleteDebate(id) {
+    if (!confirm('Delete this reply?')) return
+    const { error } = await adminSupabase.from('debate_replies').delete().eq('id', id)
+    if (error) showToast('Failed to delete.', 'error')
+    else { showToast('Reply deleted.'); loadDebates() }
+  }
+
   async function deleteUser(id) {
-    if (!confirm('Delete this user profile? (does not delete auth account)')) return
-    const { error } = await supabase.from('profiles').delete().eq('id', id)
+    if (!confirm('Delete this user profile?')) return
+    const { error } = await adminSupabase.from('profiles').delete().eq('id', id)
     if (error) showToast('Failed to delete.', 'error')
     else { showToast('Profile deleted.'); loadUsers() }
   }
@@ -110,6 +137,9 @@ function ModDashboard() {
         <button className={`mod-tab${tab === 'opinions' ? ' active' : ''}`} onClick={() => setTab('opinions')}>
           Opinions ({opinions.length})
         </button>
+        <button className={`mod-tab${tab === 'debates' ? ' active' : ''}`} onClick={() => setTab('debates')}>
+          Debates ({debates.length})
+        </button>
         <button className={`mod-tab${tab === 'users' ? ' active' : ''}`} onClick={() => setTab('users')}>
           Users ({users.length})
         </button>
@@ -125,7 +155,7 @@ function ModDashboard() {
               <div key={op.id} className="mod-row">
                 <div className="mod-row-meta">
                   <span className="mod-user">@{op.profiles?.username ?? 'unknown'}</span>
-                  <span className="mod-topic topic-badge">{op.topic}</span>
+                  <span className="topic-badge">{op.topic}</span>
                   <span className={`intensity-badge ${op.intensity}`} style={{ fontSize: 10 }}>
                     {op.intensity === 'hard' ? '🔥 Hard' : '💭 Soft'}
                   </span>
@@ -137,6 +167,29 @@ function ModDashboard() {
                     👍 {op.agrees_count} · 👎 {op.disagrees_count} · ⚡ {op.debates_count}
                   </span>
                   <button className="mod-delete-btn" onClick={() => deleteOpinion(op.id)}>Delete</button>
+                </div>
+              </div>
+            ))
+        )}
+
+        {!loading && tab === 'debates' && (
+          debates.length === 0
+            ? <div className="feed-empty">No debate replies.</div>
+            : debates.map(d => (
+              <div key={d.id} className="mod-row">
+                <div className="mod-row-meta">
+                  <span className="mod-user">@{d.profiles?.username ?? 'unknown'}</span>
+                  <span className="card-time">{new Date(d.created_at).toLocaleString()}</span>
+                </div>
+                {d.opinions?.text && (
+                  <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0, fontStyle: 'italic' }}>
+                    On: "{d.opinions.text.slice(0, 80)}{d.opinions.text.length > 80 ? '…' : ''}"
+                  </p>
+                )}
+                <p className="mod-text">{d.text}</p>
+                <div className="mod-row-actions">
+                  <span />
+                  <button className="mod-delete-btn" onClick={() => deleteDebate(d.id)}>Delete</button>
                 </div>
               </div>
             ))
