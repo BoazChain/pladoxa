@@ -18,7 +18,7 @@ function Feed() {
   const [opinions, setOpinions] = useState([])
   const [userVotes, setUserVotes] = useState({})
   const [filter, setFilter] = useState('All')
-  const [sort, setSort] = useState('hot')
+  const [sort, setSort] = useState('new')
   const [createOpen, setCreateOpen] = useState(false)
   const [debateId, setDebateId] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
@@ -67,6 +67,7 @@ function Feed() {
       intensity: row.intensity,
       topic: row.topic,
       ts: timeAgo(row.created_at),
+      createdAt: row.created_at,
       agrees: row.agrees_count,
       disagrees: row.disagrees_count,
       debates: row.debates_count,
@@ -206,7 +207,8 @@ function Feed() {
 
   const filtered = opinions.filter(op => filter === 'All' || op.topic === filter)
   const sorted = [...filtered].sort((a, b) => {
-    if (sort === 'new') return 0
+    if (sort === 'new') return new Date(b.createdAt) - new Date(a.createdAt)
+    if (sort === 'top') return (b.agrees + b.disagrees) - (a.agrees + a.disagrees)
     if (sort === 'controversial') return b.debates - a.debates
     return (b.agrees + b.debates * 2) - (a.agrees + a.debates * 2)
   })
@@ -235,7 +237,7 @@ function Feed() {
               ))}
             </div>
             <div className="sort-row">
-              {[['hot', '🔥 Hot'], ['new', '✨ New'], ['controversial', '⚡ Controversial']].map(([val, label]) => (
+              {[['new', '✨ New'], ['top', '🔥 Top'], ['controversial', '⚡ Controversial']].map(([val, label]) => (
                 <button
                   key={val}
                   className={`sort-btn${sort === val ? ' active' : ''}`}
