@@ -727,3 +727,113 @@
   .action-btn { padding: 8px 8px; font-size: 11px; }
   .action-btn .btn-label { display: none; }
 }
+
+/* Moderation */
+.mod-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.mod-gate-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mod-gate-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0 0 8px;
+}
+.mod-wrap {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.mod-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.mod-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 16px 24px 0;
+}
+.mod-tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+.mod-tab.active {
+  background: var(--surface);
+  color: var(--text-1);
+  border-color: var(--border);
+}
+.mod-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+.mod-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mod-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mod-user {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.mod-text {
+  font-size: 14px;
+  color: var(--text-1);
+  margin: 0;
+  line-height: 1.5;
+}
+.mod-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mod-delete-btn {
+  background: none;
+  border: 1px solid var(--disagree);
+  border-radius: 6px;
+  color: var(--disagree);
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.mod-delete-btn:hover {
+  background: var(--disagree);
+  color: #fff;
+}
