@@ -6,7 +6,8 @@ const MOD_PASSWORD = import.meta.env.VITE_MOD_PASSWORD || 'admin123'
 // Service role client — bypasses RLS for mod actions
 const adminSupabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_SERVICE_KEY
+  import.meta.env.VITE_SUPABASE_SERVICE_KEY,
+  { auth: { persistSession: false, storageKey: 'admin-auth' } }
 )
 
 export default function Moderation() {
@@ -113,14 +114,16 @@ function ModDashboard() {
   async function deleteDebate(id) {
     if (!confirm('Delete this reply?')) return
     const { error } = await adminSupabase.from('debate_replies').delete().eq('id', id)
-    if (error) showToast('Failed to delete.', 'error')
+    console.log('deleteDebate', id, error)
+    if (error) showToast('Failed: ' + error.message, 'error')
     else { showToast('Reply deleted.'); loadDebates() }
   }
 
   async function deleteUser(id) {
     if (!confirm('Delete this user profile?')) return
     const { error } = await adminSupabase.from('profiles').delete().eq('id', id)
-    if (error) showToast('Failed to delete.', 'error')
+    console.log('deleteUser', id, error)
+    if (error) showToast('Failed: ' + error.message, 'error')
     else { showToast('Profile deleted.'); loadUsers() }
   }
 
