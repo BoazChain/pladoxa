@@ -58,13 +58,14 @@ export default function Debate({ opinionId }) {
   }
 
   async function loadReplies() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('debate_replies')
       .select('*, profiles(display_name, username, avatar_color, avatar_url)')
       .eq('opinion_id', opinionId)
       .is('parent_reply_id', null)
       .order('created_at', { ascending: true })
 
+    if (error) { console.error('[LOAD REPLIES ERROR]', error); return }
     if (!data) return
 
     // Load sub-replies for each top-level reply
