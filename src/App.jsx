@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
 import './App.css'
@@ -13,6 +13,8 @@ export default function App() {
   )
 }
 
+const PAGE_SIZE = 20
+
 function Feed() {
   const { user, profile, loading: authLoading, signOut } = useAuth()
   const [opinions, setOpinions] = useState([])
@@ -24,28 +26,80 @@ function Feed() {
   const [authOpen, setAuthOpen] = useState(false)
   const [toast, setToast] = useState(null)
   const [fetching, setFetching] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const pageRef = useRef(0)
+  const sentinelRef = useRef(null)
 
   useEffect(() => {
-    loadOpinions()
-  }, [])
+    resetAndLoad()
+  }, [sort, filter])
 
   useEffect(() => {
     if (user) loadUserVotes()
     else setUserVotes({})
   }, [user])
 
-  async function loadOpinions() {
-    setFetching(true)
-    const { data, error } = await supabase
+  // Infinite scroll observer
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && !loadingMore && !fetching) {
+        loadMore()
+      }
+    }, { threshold: 0.1 })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [loadingMore, fetching, hasMore])
+
+  function buildQuery(from, to) {
+    let q = supabase
       .from('opinions')
       .select(`*, profiles(display_name, username, avatar_color)`)
       .neq('status', 'flagged')
-      .order('created_at', { ascending: false })
+      .range(from, to)
 
+    if (filter !== 'All') q = q.eq('topic', filter)
+
+    if (sort === 'new') q = q.order('created_at', { ascending: false })
+    else if (sort === 'top') q = q.order('agrees_count', { ascending: false }).order('disagrees_count', { ascending: false })
+    else if (sort === 'controversial') q = q.order('debates_count', { ascending: false })
+
+    return q
+  }
+
+  async function resetAndLoad() {
+    setFetching(true)
+    setOpinions([])
+    setHasMore(true)
+    pageRef.current = 0
+
+    const { data, error } = await buildQuery(0, PAGE_SIZE - 1)
     if (!error && data) {
       setOpinions(data.map(normalizeOpinion))
+      setHasMore(data.length === PAGE_SIZE)
+      pageRef.current = 1
     }
     setFetching(false)
+  }
+
+  async function loadMore() {
+    if (!hasMore || loadingMore) return
+    setLoadingMore(true)
+    const from = pageRef.current * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+    const { data, error } = await buildQuery(from, to)
+    if (!error && data) {
+      setOpinions(prev => [...prev, ...data.map(normalizeOpinion)])
+      setHasMore(data.length === PAGE_SIZE)
+      pageRef.current += 1
+    }
+    setLoadingMore(false)
+  }
+
+  async function loadOpinions() {
+    await resetAndLoad()
   }
 
   async function loadUserVotes() {
@@ -247,14 +301,6 @@ function Feed() {
 
   const debateOp = opinions.find(op => op.id === debateId)
 
-  const filtered = opinions.filter(op => filter === 'All' || op.topic === filter)
-  const sorted = [...filtered].sort((a, b) => {
-    if (sort === 'new') return new Date(b.createdAt) - new Date(a.createdAt)
-    if (sort === 'top') return (b.agrees + b.disagrees) - (a.agrees + a.disagrees)
-    if (sort === 'controversial') return b.debates - a.debates
-    return (b.agrees + b.debates * 2) - (a.agrees + a.debates * 2)
-  })
-
   return (
     <div>
       <Navbar
@@ -294,9 +340,9 @@ function Feed() {
           <div className="feed">
             {fetching || authLoading ? (
               <div className="feed-empty">Loading...</div>
-            ) : sorted.length === 0 ? (
+            ) : opinions.length === 0 ? (
               <div className="feed-empty">No opinions here yet. Drop the first one.</div>
-            ) : sorted.map(op => (
+            ) : opinions.map(op => (
               <OpinionCard
                 key={op.id}
                 op={op}
@@ -308,6 +354,9 @@ function Feed() {
                 }}
               />
             ))}
+            <div ref={sentinelRef} style={{ height: 1 }} />
+            {loadingMore && <div className="feed-empty" style={{ padding: '12px 0' }}>Loading more...</div>}
+            {!hasMore && opinions.length > 0 && <div className="feed-empty" style={{ padding: '12px 0', fontSize: 12 }}>You've seen it all.</div>}
           </div>
         </main>
       </div>

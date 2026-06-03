@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 
@@ -50,6 +50,8 @@ export default function Moderation() {
   return <ModDashboard />
 }
 
+const MOD_PAGE_SIZE = 20
+
 function ModDashboard() {
   const [tab, setTab] = useState('flagged')
   const [opinions, setOpinions] = useState([])
@@ -57,95 +59,141 @@ function ModDashboard() {
   const [debates, setDebates] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState({ opinions: true, debates: true, users: true, flagged: true })
+  const pageRef = useRef({ opinions: 0, debates: 0, users: 0, flagged: 0 })
+  const sentinelRef = useRef(null)
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
-    if (tab === 'opinions') loadOpinions()
-    else if (tab === 'flagged') loadFlagged()
-    else if (tab === 'debates') loadDebates()
-    else if (tab === 'users') loadUsers()
+    resetTab(tab)
   }, [tab])
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && !loadingMore && !loading) loadMoreTab(tab)
+    }, { threshold: 0.1 })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [tab, loadingMore, loading])
+
+  function resetTab(t) {
+    pageRef.current[t] = 0
+    setHasMore(h => ({ ...h, [t]: true }))
+    if (t === 'opinions') { setOpinions([]); loadOpinions(0, true) }
+    else if (t === 'flagged') { setFlagged([]); loadFlagged(0, true) }
+    else if (t === 'debates') { setDebates([]); loadDebates(0, true) }
+    else if (t === 'users') { setUsers([]); loadUsers(0, true) }
+  }
+
+  function loadMoreTab(t) {
+    if (!hasMore[t] || loadingMore) return
+    const page = pageRef.current[t]
+    if (t === 'opinions') loadOpinions(page, false)
+    else if (t === 'flagged') loadFlagged(page, false)
+    else if (t === 'debates') loadDebates(page, false)
+    else if (t === 'users') loadUsers(page, false)
+  }
 
   function showToast(msg, type = '') {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 2500)
   }
 
-  async function loadFlagged() {
-    setLoading(true)
+  async function loadFlagged(page = 0, reset = false) {
+    reset ? setLoading(true) : setLoadingMore(true)
+    const from = page * MOD_PAGE_SIZE
     const { data, error } = await adminSupabase
       .from('opinions')
       .select('*, profiles(display_name, username)')
       .eq('status', 'flagged')
       .order('created_at', { ascending: false })
-    if (!error && data) setFlagged(data)
-    else if (error) showToast('Failed to load flagged.', 'error')
-    setLoading(false)
+      .range(from, from + MOD_PAGE_SIZE - 1)
+    if (!error && data) {
+      setFlagged(prev => reset ? data : [...prev, ...data])
+      setHasMore(h => ({ ...h, flagged: data.length === MOD_PAGE_SIZE }))
+      pageRef.current.flagged = page + 1
+    } else if (error) showToast('Failed to load flagged.', 'error')
+    reset ? setLoading(false) : setLoadingMore(false)
   }
 
   async function approveOpinion(id) {
     const { error } = await adminSupabase.from('opinions').update({ status: 'approved' }).eq('id', id)
     if (error) showToast('Failed to approve.', 'error')
-    else { showToast('Opinion approved ✓'); loadFlagged() }
+    else { showToast('Opinion approved ✓'); resetTab('flagged') }
   }
 
-  async function loadOpinions() {
-    setLoading(true)
+  async function loadOpinions(page = 0, reset = false) {
+    reset ? setLoading(true) : setLoadingMore(true)
+    const from = page * MOD_PAGE_SIZE
     const { data, error } = await adminSupabase
       .from('opinions')
       .select('*, profiles(display_name, username)')
       .order('created_at', { ascending: false })
-    if (!error && data) setOpinions(data)
-    else if (error) showToast('Failed to load opinions.', 'error')
-    setLoading(false)
+      .range(from, from + MOD_PAGE_SIZE - 1)
+    if (!error && data) {
+      setOpinions(prev => reset ? data : [...prev, ...data])
+      setHasMore(h => ({ ...h, opinions: data.length === MOD_PAGE_SIZE }))
+      pageRef.current.opinions = page + 1
+    } else if (error) showToast('Failed to load opinions.', 'error')
+    reset ? setLoading(false) : setLoadingMore(false)
   }
 
-  async function loadDebates() {
-    setLoading(true)
+  async function loadDebates(page = 0, reset = false) {
+    reset ? setLoading(true) : setLoadingMore(true)
+    const from = page * MOD_PAGE_SIZE
     const { data, error } = await adminSupabase
       .from('debate_replies')
       .select('*, profiles(display_name, username), opinions(text)')
       .order('created_at', { ascending: false })
-    if (!error && data) setDebates(data)
-    else if (error) showToast('Failed to load debates.', 'error')
-    setLoading(false)
+      .range(from, from + MOD_PAGE_SIZE - 1)
+    if (!error && data) {
+      setDebates(prev => reset ? data : [...prev, ...data])
+      setHasMore(h => ({ ...h, debates: data.length === MOD_PAGE_SIZE }))
+      pageRef.current.debates = page + 1
+    } else if (error) showToast('Failed to load debates.', 'error')
+    reset ? setLoading(false) : setLoadingMore(false)
   }
 
-  async function loadUsers() {
-    setLoading(true)
+  async function loadUsers(page = 0, reset = false) {
+    reset ? setLoading(true) : setLoadingMore(true)
+    const from = page * MOD_PAGE_SIZE
     const { data, error } = await adminSupabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
-    if (!error && data) setUsers(data)
-    else if (error) showToast('Failed to load users.', 'error')
-    setLoading(false)
+      .range(from, from + MOD_PAGE_SIZE - 1)
+    if (!error && data) {
+      setUsers(prev => reset ? data : [...prev, ...data])
+      setHasMore(h => ({ ...h, users: data.length === MOD_PAGE_SIZE }))
+      pageRef.current.users = page + 1
+    } else if (error) showToast('Failed to load users.', 'error')
+    reset ? setLoading(false) : setLoadingMore(false)
   }
 
   async function deleteOpinion(id) {
     if (!confirm('Delete this opinion and all its replies?')) return
-    // Delete related rows first to avoid FK constraints
     await adminSupabase.from('votes').delete().eq('opinion_id', id)
     await adminSupabase.from('debate_replies').delete().eq('opinion_id', id)
     const { error } = await adminSupabase.from('opinions').delete().eq('id', id)
     if (error) { showToast('Failed to delete: ' + error.message, 'error'); console.error(error) }
-    else { showToast('Opinion deleted.'); loadOpinions() }
+    else { showToast('Opinion deleted.'); resetTab(tab) }
   }
 
   async function deleteDebate(id) {
     if (!confirm('Delete this reply?')) return
     const { error } = await adminSupabase.from('debate_replies').delete().eq('id', id)
-    console.log('deleteDebate', id, error)
     if (error) showToast('Failed: ' + error.message, 'error')
-    else { showToast('Reply deleted.'); loadDebates() }
+    else { showToast('Reply deleted.'); resetTab('debates') }
   }
 
   async function deleteUser(id) {
     if (!confirm('Delete this user profile?')) return
     const { error } = await adminSupabase.from('profiles').delete().eq('id', id)
-    console.log('deleteUser', id, error)
     if (error) showToast('Failed: ' + error.message, 'error')
-    else { showToast('Profile deleted.'); loadUsers() }
+    else { showToast('Profile deleted.'); resetTab('users') }
   }
 
   return (
@@ -268,6 +316,12 @@ function ModDashboard() {
               </div>
             ))
         )}
+
+        <div ref={sentinelRef} style={{ height: 1 }} />
+        {loadingMore && <div className="feed-empty" style={{ padding: '12px 0' }}>Loading more...</div>}
+        {!hasMore[tab] && (opinions.length > 0 || debates.length > 0 || users.length > 0 || flagged.length > 0) &&
+          <div className="feed-empty" style={{ padding: '12px 0', fontSize: 12 }}>End of list.</div>
+        }
       </div>
 
       {toast && <div className={`toast${toast.type ? ' ' + toast.type : ''}`}>{toast.msg}</div>}
