@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop'
+import 'react-image-crop/dist/ReactCrop.css'
 import { supabase } from './lib/supabase'
 import { useAuth } from './contexts/AuthContext'
 
@@ -152,35 +154,36 @@ export default function Profile({ username }) {
 function AvatarSection({ profile, isMe, onUpdate }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [cropSrc, setCropSrc] = useState(null)
+  const [cropMime, setCropMime] = useState('image/jpeg')
   const inputRef = useRef(null)
 
-  async function handleFile(e) {
+  function handleFile(e) {
     const file = e.target.files[0]
+    e.target.value = ''
     if (!file) return
     setError('')
+    if (file.size > 10 * 1024 * 1024) { setError('Image must be under 10MB.'); return }
+    const reader = new FileReader()
+    reader.onload = () => { setCropSrc(reader.result); setCropMime(file.type) }
+    reader.readAsDataURL(file)
+  }
 
-    const maxMb = 5
-    if (file.size > maxMb * 1024 * 1024) {
-      setError(`Image must be under ${maxMb}MB.`)
-      return
-    }
-
+  async function handleCropDone(croppedBlob) {
+    setCropSrc(null)
     setUploading(true)
+    setError('')
 
-    // Convert to base64 for moderation
-    const base64 = await toBase64(file)
-    const mimeType = file.type
-
-    // Moderate image
+    // Moderate
     try {
+      const base64 = await blobToBase64(croppedBlob)
       const modRes = await fetch('/api/moderate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64.split(',')[1], mimeType }),
+        body: JSON.stringify({ imageBase64: base64.split(',')[1], mimeType: 'image/jpeg' }),
       })
       const modData = await modRes.json()
       const result = modData.results?.[0]
-
       if (result) {
         const maxScore = Math.max(...Object.values(result.category_scores || {}))
         console.log('[IMG MOD] flagged:', result.flagged, 'maxScore:', maxScore)
@@ -190,64 +193,109 @@ function AvatarSection({ profile, isMe, onUpdate }) {
           return
         }
       }
-    } catch (e) {
-      console.error('[IMG MOD] error:', e)
-      // Allow upload if moderation fails
-    }
+    } catch (e) { console.error('[IMG MOD]', e) }
 
-    // Upload to Supabase Storage
-    const ext = file.name.split('.').pop()
-    const path = `${profile.id}/avatar.${ext}`
-
+    // Upload
+    const path = `${profile.id}/avatar.jpg`
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(path, file, { upsert: true })
+      .upload(path, croppedBlob, { upsert: true, contentType: 'image/jpeg' })
 
-    if (uploadError) {
-      setError('Upload failed: ' + uploadError.message)
-      setUploading(false)
-      return
-    }
+    if (uploadError) { setError('Upload failed: ' + uploadError.message); setUploading(false); return }
 
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+    const cacheBust = `${publicUrl}?t=${Date.now()}`
 
     const { data: updated, error: updateError } = await supabase
-      .from('profiles')
-      .update({ avatar_url: publicUrl })
-      .eq('id', profile.id)
-      .select()
-      .single()
+      .from('profiles').update({ avatar_url: cacheBust }).eq('id', profile.id).select().single()
 
-    if (updateError) {
-      setError('Failed to save avatar.')
-    } else {
-      onUpdate(updated)
-    }
-
+    if (updateError) setError('Failed to save avatar.')
+    else onUpdate(updated)
     setUploading(false)
   }
 
   return (
     <div className="profile-avatar-wrap">
-      <div className="avatar avatar-xl" style={{ background: profile.avatar_color, position: 'relative' }}>
-        {profile.avatar_url
-          ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-          : initials(profile.display_name)
-        }
+      <div className="avatar-xl-wrap">
+        <div className="avatar avatar-xl" style={{ background: profile.avatar_color }}>
+          {profile.avatar_url
+            ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : initials(profile.display_name)}
+        </div>
         {isMe && (
-          <button
-            className="avatar-upload-btn"
-            onClick={() => inputRef.current?.click()}
-            title="Change photo"
-          >
-            {uploading ? '...' : '📷'}
+          <button className="avatar-upload-btn" onClick={() => inputRef.current?.click()} title="Change photo">
+            {uploading ? '…' : '📷'}
           </button>
         )}
       </div>
       {isMe && <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />}
       {error && <p className="auth-error" style={{ maxWidth: 200, textAlign: 'center' }}>{error}</p>}
+      {cropSrc && <CropModal src={cropSrc} mime={cropMime} onDone={handleCropDone} onCancel={() => setCropSrc(null)} />}
     </div>
   )
+}
+
+function CropModal({ src, onDone, onCancel }) {
+  const [crop, setCrop] = useState()
+  const [completedCrop, setCompletedCrop] = useState()
+  const imgRef = useRef(null)
+
+  function onImageLoad(e) {
+    const { width, height } = e.currentTarget
+    const c = centerCrop(makeAspectCrop({ unit: '%', width: 80 }, 1, width, height), width, height)
+    setCrop(c)
+  }
+
+  async function apply() {
+    if (!completedCrop || !imgRef.current) return
+    const canvas = document.createElement('canvas')
+    const size = 400
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    const img = imgRef.current
+    const scaleX = img.naturalWidth / img.width
+    const scaleY = img.naturalHeight / img.height
+    ctx.drawImage(
+      img,
+      completedCrop.x * scaleX, completedCrop.y * scaleY,
+      completedCrop.width * scaleX, completedCrop.height * scaleY,
+      0, 0, size, size
+    )
+    canvas.toBlob(blob => { if (blob) onDone(blob) }, 'image/jpeg', 0.9)
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">Crop your photo</span>
+          <button className="modal-close" onClick={onCancel}>x</button>
+        </div>
+        <div className="create-body" style={{ alignItems: 'center' }}>
+          <p style={{ color: 'var(--text-2)', fontSize: 13, margin: 0 }}>Drag to reposition. The crop is always square.</p>
+          <div style={{ maxWidth: '100%', marginTop: 8 }}>
+            <ReactCrop crop={crop} onChange={c => setCrop(c)} onComplete={c => setCompletedCrop(c)} aspect={1} circularCrop>
+              <img ref={imgRef} src={src} onLoad={onImageLoad} style={{ maxWidth: '100%', maxHeight: 360 }} alt="crop" />
+            </ReactCrop>
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button className="submit-btn" onClick={apply}>Apply & Upload</button>
+            <button className="auth-link" onClick={onCancel}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
 }
 
 function EditNameButton({ profile, onUpdate }) {
@@ -331,15 +379,6 @@ function EditBioButton({ profile, onUpdate }) {
       </div>
     </div>
   )
-}
-
-function toBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
 }
 
 function initials(name) {
