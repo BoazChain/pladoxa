@@ -182,7 +182,9 @@ export default function Debate({ opinionId }) {
               </div>
             </div>
           </div>
-          <p className="debate-opinion-text">{opinion.text}</p>
+          <p className="debate-opinion-text" style={!opinion.text ? { color: 'var(--text-2)', fontStyle: 'italic' } : {}}>
+            {opinion.text ?? '[This opinion was deleted]'}
+          </p>
           <div className="heat-wrap" style={{ marginTop: 10 }}>
             <div className="heat-track"><div className="heat-fill" style={{ width: `${pct}%` }} /></div>
             <div className="heat-labels">
