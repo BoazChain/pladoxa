@@ -198,6 +198,7 @@ function ModDashboard({ password }) {
                   <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>🚩 FLAGGED</span>
                   <span className="mod-user">@{op.profiles?.username ?? 'unknown'}</span>
                   <span className="topic-badge">{op.topic}</span>
+                  {op.mod_score != null && <ModScore score={op.mod_score} />}
                   <span className="card-time">{new Date(op.created_at).toLocaleString()}</span>
                 </div>
                 <p className="mod-text">{op.text}</p>
@@ -221,6 +222,7 @@ function ModDashboard({ password }) {
                   <span className={`intensity-badge ${op.intensity}`} style={{ fontSize: 10 }}>
                     {op.intensity === 'hard' ? '🔥 Hard' : '💭 Soft'}
                   </span>
+                  {op.mod_score != null && <ModScore score={op.mod_score} />}
                   <span className="card-time">{new Date(op.created_at).toLocaleString()}</span>
                 </div>
                 <p className="mod-text">{op.text}</p>
@@ -305,5 +307,19 @@ function ModDashboard({ password }) {
         </div>
       )}
     </div>
+  )
+}
+
+function ModScore({ score }) {
+  const pct = Math.round(score * 100)
+  const color = pct >= 70 ? '#ef4444' : pct >= 30 ? '#f59e0b' : '#22c55e'
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700, padding: '2px 7px',
+      borderRadius: 6, background: `${color}22`, color, border: `1px solid ${color}`,
+      whiteSpace: 'nowrap'
+    }}>
+      🤖 {pct}%
+    </span>
   )
 }

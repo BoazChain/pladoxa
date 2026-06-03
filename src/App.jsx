@@ -246,12 +246,18 @@ function Feed() {
       const result = json.results?.[0]
       if (!result) return { action: 'allow', reason: 'no_result' }
 
-      const scores = result.category_scores
-      const maxScore = Math.max(...Object.values(scores))
+      const scores = result.category_scores || {}
+      const values = Object.values(scores).filter(v => typeof v === 'number')
+      const maxScore = values.length ? Math.max(...values) : 0
 
-      // Hard remove: OpenAI explicitly flagged it, or very high score
-      if (result.flagged || maxScore >= 0.7) return { action: 'remove', score: maxScore }
-      // Flag for review: moderate score on any category
+      // Hate speech: very low threshold — catches nazi/extremist content
+      const hateScore = Math.max(scores['hate'] || 0, scores['hate/threatening'] || 0)
+      if (hateScore >= 0.05) return { action: 'remove', score: hateScore }
+
+      // OpenAI's own flagged judgment — always remove
+      if (result.flagged) return { action: 'remove', score: maxScore }
+
+      if (maxScore >= 0.7) return { action: 'remove', score: maxScore }
       if (maxScore >= 0.3) return { action: 'flag', score: maxScore }
       return { action: 'allow', score: maxScore }
     } catch (e) {
@@ -286,10 +292,11 @@ function Feed() {
       await supabase.from('opinions').delete().eq('id', inserted.id)
       showToast('Post removed — content policy violation.', 'error')
     } else if (mod.action === 'flag') {
-      await supabase.from('opinions').update({ status: 'flagged' }).eq('id', inserted.id)
+      await supabase.from('opinions').update({ status: 'flagged', mod_score: mod.score ?? null }).eq('id', inserted.id)
       showToast('Opinion dropped.', 'success')
       loadOpinions()
     } else {
+      await supabase.from('opinions').update({ mod_score: mod.score ?? null }).eq('id', inserted.id)
       showToast('Opinion dropped.', 'success')
       loadOpinions()
     }
