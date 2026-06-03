@@ -148,10 +148,10 @@ function Feed() {
 
       const scores = result.category_scores
       const maxScore = Math.max(...Object.values(scores))
-      console.log('[MOD] flagged:', result.flagged, 'maxScore:', maxScore.toFixed(3))
+      console.log('[MOD] flagged:', result.flagged, 'maxScore:', maxScore.toFixed(3), 'scores:', scores)
 
       if (maxScore >= 0.8) return { action: 'remove', score: maxScore }
-      if (result.flagged) return { action: 'flag', score: maxScore }
+      if (maxScore >= 0.5) return { action: 'flag', score: maxScore }
       return { action: 'allow', score: maxScore }
     } catch (e) {
       console.error('[MOD] error:', e)
@@ -178,17 +178,17 @@ function Feed() {
 
     const mod = await moderateText(data.text)
 
-    const scoreLabel = mod.score != null ? ` (score: ${mod.score.toFixed(3)})` : ` (${mod.reason ?? 'error'})`
+    console.log('[MOD] action:', mod.action, 'score:', mod.score)
 
     if (mod.action === 'remove') {
       await supabase.from('opinions').delete().eq('id', inserted.id)
-      showToast(`🔴 Removed — policy violation${scoreLabel}`, 'error')
+      showToast('Post removed — content policy violation.', 'error')
     } else if (mod.action === 'flag') {
       await supabase.from('opinions').update({ status: 'flagged' }).eq('id', inserted.id)
-      showToast(`🟡 Flagged for review${scoreLabel}`, 'success')
+      showToast('Opinion dropped.', 'success')
       loadOpinions()
     } else {
-      showToast(`🟢 Opinion dropped${scoreLabel}`, 'success')
+      showToast('Opinion dropped.', 'success')
       loadOpinions()
     }
   }
