@@ -79,7 +79,7 @@ export default function Debate({ opinionId }) {
     setReplies(withSubs)
   }
 
-  async function submitReply(text, parentReplyId = null) {
+  async function submitReply(text, parentReplyId = null, parentReply = null) {
     if (!user) { setAuthNeeded(true); return }
     if (!text.trim()) return
 
@@ -90,12 +90,15 @@ export default function Debate({ opinionId }) {
       parent_reply_id: parentReplyId || null,
     })
 
-    if (!error) {
-      // Realtime will reload, but also manually refresh
-      await loadReplies()
-      return true
+    if (error) {
+      if (error.message?.includes('rate_limit_exceeded')) {
+        alert('Slow down — wait 10 seconds between replies.')
+      }
+      return false
     }
-    return false
+
+    await loadReplies()
+    return true
   }
 
   async function submitTopLevel(e) {
@@ -185,15 +188,19 @@ export default function Debate({ opinionId }) {
                 ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
                 : initials(profile?.display_name ?? '?')}
             </div>
-            <textarea
-              className="reply-textarea"
-              placeholder="Make your case..."
-              value={replyText}
-              onChange={e => setReplyText(e.target.value)}
-              maxLength={280}
-              rows={2}
-            />
-            <button className="submit-btn" type="submit" disabled={!replyText.trim() || submitting} style={{ alignSelf: 'flex-end', padding: '8px 16px' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <textarea
+                className="reply-textarea"
+                placeholder="Make your case..."
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                maxLength={280}
+                rows={2}
+                style={{ width: '100%' }}
+              />
+              <div className={`char-counter${280 - replyText.length < 20 ? ' char-counter-warn' : ''}`}>{280 - replyText.length}</div>
+            </div>
+            <button className="submit-btn" type="submit" disabled={!replyText.trim() || submitting} style={{ alignSelf: 'flex-start', padding: '8px 16px' }}>
               {submitting ? '...' : 'Reply'}
             </button>
           </form>
@@ -214,7 +221,7 @@ export default function Debate({ opinionId }) {
               user={user}
               profile={profile}
               likedIds={likedIds}
-              onReply={submitReply}
+              onReply={(text, parentId) => submitReply(text, parentId, reply)}
               onLike={likeReply}
               onAuthNeeded={() => setAuthNeeded(true)}
             />
@@ -235,6 +242,22 @@ function ReplyCard({ reply, user, profile, likedIds, onReply, onLike, onAuthNeed
   const [text, setText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const isMe = user?.id === reply.user_id
+  const cardRef = useRef(null)
+  const touchStartX = useRef(null)
+
+  // Swipe-to-reply on mobile
+  function onTouchStart(e) {
+    touchStartX.current = e.touches[0].clientX
+  }
+  function onTouchEnd(e) {
+    if (touchStartX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (dx > 60) {
+      if (!user) { onAuthNeeded(); return }
+      setReplying(true)
+    }
+  }
 
   async function submit(e) {
     e.preventDefault()
@@ -246,8 +269,15 @@ function ReplyCard({ reply, user, profile, likedIds, onReply, onLike, onAuthNeed
     setSubmitting(false)
   }
 
+  const charsLeft = 280 - text.length
+
   return (
-    <div className={`reply-thread${isMe ? ' reply-thread-me' : ''}`}>
+    <div
+      ref={cardRef}
+      className={`reply-thread${isMe ? ' reply-thread-me' : ''}`}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       <div className="reply-main">
         <div className="avatar avatar-sm" style={{ background: reply.profiles?.avatar_color ?? '#8b5cf6', flexShrink: 0, cursor: 'pointer' }}
           onClick={() => window.location.hash = `/profile/${reply.profiles?.username}`}>
@@ -284,25 +314,34 @@ function ReplyCard({ reply, user, profile, likedIds, onReply, onLike, onAuthNeed
 
           {replying && (
             <form className="sub-reply-form" onSubmit={submit}>
-              <div className="avatar avatar-sm" style={{ background: profile?.avatar_color ?? '#8b5cf6', flexShrink: 0 }}>
-                {profile?.avatar_url
-                  ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                  : initials(profile?.display_name ?? '?')}
+              <div className="reply-context-hint">
+                Replying to <strong>@{reply.profiles?.username ?? 'unknown'}</strong>: <em>"{(reply.text ?? '').slice(0, 60)}{(reply.text ?? '').length > 60 ? '…' : ''}"</em>
               </div>
-              <textarea
-                className="reply-textarea"
-                placeholder={`Reply to ${reply.profiles?.display_name ?? 'this'}...`}
-                value={text}
-                onChange={e => setText(e.target.value)}
-                maxLength={280}
-                rows={2}
-                autoFocus
-              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <div className="avatar avatar-sm" style={{ background: profile?.avatar_color ?? '#8b5cf6', flexShrink: 0 }}>
+                  {profile?.avatar_url
+                    ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    : initials(profile?.display_name ?? '?')}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <textarea
+                    className="reply-textarea"
+                    placeholder={`Reply to ${reply.profiles?.display_name ?? 'this'}...`}
+                    value={text}
+                    onChange={e => setText(e.target.value)}
+                    maxLength={280}
+                    rows={2}
+                    autoFocus
+                    style={{ width: '100%' }}
+                  />
+                  <div className={`char-counter${charsLeft < 20 ? ' char-counter-warn' : ''}`}>{charsLeft}</div>
+                </div>
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="submit-btn" type="submit" disabled={!text.trim() || submitting} style={{ padding: '6px 14px', fontSize: 12 }}>
                   {submitting ? '...' : 'Reply'}
                 </button>
-                <button type="button" className="auth-link" onClick={() => setReplying(false)}>Cancel</button>
+                <button type="button" className="auth-link" onClick={() => { setReplying(false); setText('') }}>Cancel</button>
               </div>
             </form>
           )}
@@ -326,6 +365,12 @@ function ReplyCard({ reply, user, profile, likedIds, onReply, onLike, onAuthNeed
                     {sub.profiles?.display_name ?? 'Unknown'}
                   </span>
                   <span className="reply-time">{timeAgo(sub.created_at)}</span>
+                </div>
+                {/* Discord-style context: show what they're replying to */}
+                <div className="reply-context">
+                  <span className="reply-context-arrow">↩</span>
+                  <span className="reply-context-name">@{reply.profiles?.username ?? 'unknown'}</span>
+                  <span className="reply-context-quote">"{(reply.text ?? '').slice(0, 60)}{(reply.text ?? '').length > 60 ? '…' : ''}"</span>
                 </div>
                 <p className="reply-text">{sub.text}</p>
                 <div className="reply-actions">

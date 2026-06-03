@@ -881,8 +881,20 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-  z-index: 100;
+  z-index: 1000;
   overflow: hidden;
+}
+@media (max-width: 600px) {
+  .notif-dropdown {
+    position: fixed;
+    top: 56px;
+    left: 0;
+    right: 0;
+    width: 100%;
+    border-radius: 0 0 14px 14px;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
 }
 .notif-head {
   display: flex;
@@ -966,4 +978,57 @@
 .profile-opinion-card:hover {
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+/* Delete button on opinion card */
+.card-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.4;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+.card-delete-btn:hover { opacity: 1; background: rgba(239,68,68,0.15); }
+
+/* Character counter */
+.char-counter {
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: right;
+  padding-right: 2px;
+}
+.char-counter-warn { color: #f43f5e; font-weight: 600; }
+
+/* Discord-style reply context */
+.reply-context {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 3px;
+  flex-wrap: wrap;
+}
+.reply-context-arrow { color: var(--accent); font-size: 12px; }
+.reply-context-name { color: var(--accent); font-weight: 600; }
+.reply-context-quote {
+  font-style: italic;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.reply-context-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 6px 10px;
+  background: rgba(139,92,246,0.08);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 8px;
 }

@@ -59,7 +59,7 @@ function Feed() {
     let q = supabase
       .from('opinions')
       .select(`*, profiles(display_name, username, avatar_color, avatar_url)`)
-      .neq('status', 'flagged')
+      .not('status', 'in', '("flagged","deleted")')
       .range(from, to)
 
     if (filter !== 'All') q = q.eq('topic', filter)
@@ -100,6 +100,17 @@ function Feed() {
     setLoadingMore(false)
   }
 
+  async function deleteOpinion(id) {
+    if (!confirm('Delete this opinion? The debate thread will stay but your text will be removed.')) return
+    const { error } = await supabase
+      .from('opinions')
+      .update({ status: 'deleted', text: null })
+      .eq('id', id)
+      .eq('user_id', user.id)
+    if (error) showToast('Failed to delete.', 'error')
+    else { showToast('Opinion deleted.'); resetAndLoad() }
+  }
+
   async function loadOpinions() {
     await resetAndLoad()
   }
@@ -128,6 +139,7 @@ function Feed() {
       agrees: row.agrees_count,
       disagrees: row.disagrees_count,
       debates: row.debates_count,
+      rawUserId: row.user_id,
       user: {
         name: row.profiles?.display_name ?? 'Unknown',
         handle: row.profiles?.username ?? 'unknown',
@@ -256,7 +268,11 @@ function Feed() {
     }).select().single()
 
     if (error) {
-      showToast('Failed to post opinion.', 'error')
+      if (error.message?.includes('rate_limit_exceeded')) {
+        showToast('Slow down — wait 30 seconds between posts.', 'error')
+      } else {
+        showToast('Failed to post opinion.', 'error')
+      }
       return
     }
 
@@ -384,11 +400,9 @@ function Feed() {
                 key={op.id}
                 op={op}
                 vote={userVotes[op.id] ?? null}
+                isOwner={user?.id === op.rawUserId}
                 onVote={type => vote(op.id, type)}
-                onDebate={() => {
-                  setDebateId(op.id)
-                  loadReplies(op.id)
-                }}
+                onDelete={() => deleteOpinion(op.id)}
               />
             ))}
             <div ref={sentinelRef} style={{ height: 1 }} />
@@ -485,7 +499,7 @@ function NotifDropdown({ notifs, onClose }) {
   )
 }
 
-function OpinionCard({ op, vote, onVote, onDebate }) {
+function OpinionCard({ op, vote, onVote, isOwner, onDelete }) {
   const total = op.agrees + op.disagrees
   const pct = total > 0 ? Math.round((op.agrees / total) * 100) : 50
 
@@ -509,6 +523,13 @@ function OpinionCard({ op, vote, onVote, onDebate }) {
           </span>
           <span className="topic-badge">{op.topic}</span>
           <span className="card-time">{op.ts}</span>
+          {isOwner && (
+            <button
+              className="card-delete-btn"
+              title="Delete opinion"
+              onClick={e => { e.stopPropagation(); onDelete() }}
+            >🗑</button>
+          )}
         </div>
       </div>
 
