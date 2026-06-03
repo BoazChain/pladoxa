@@ -16,7 +16,7 @@ export default function App() {
 const PAGE_SIZE = 20
 
 function Feed() {
-  const { user, profile, loading: authLoading, signOut, unreadCount, markAllRead } = useAuth()
+  const { user, profile, loading: authLoading, signOut, unreadCount, markAllRead, needsUsername } = useAuth()
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifs, setNotifs] = useState([])
   const [opinions, setOpinions] = useState([])
@@ -439,6 +439,7 @@ function Feed() {
       )}
 
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
+      {needsUsername && <CompleteProfileModal />}
 
       {toast && <div className={`toast${toast.type ? ' ' + toast.type : ''}`}>{toast.msg}</div>}
       {confirmState && (
@@ -748,6 +749,7 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
 function AuthModal({ onClose }) {
   const { signIn, signUp } = useAuth()
   const [mode, setMode] = useState('signin')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -760,22 +762,28 @@ function AuthModal({ onClose }) {
     setSubmitting(true)
 
     if (mode === 'signin') {
-      const err = await signIn(username, password)
-      if (err) setError('Invalid username or password.')
+      const err = await signIn(email, password)
+      if (err) setError('Incorrect email, username, or password.')
       else onClose()
     } else {
       if (!username.match(/^[a-z0-9_]{3,20}$/)) {
-        setError('Username must be 3-20 characters: letters, numbers, underscores only.')
+        setError('Username: 3–20 chars, letters/numbers/underscores only.')
         setSubmitting(false)
         return
       }
-      const err = await signUp(username, password, displayName)
+      if (!email.includes('@')) {
+        setError('Please enter a valid email.')
+        setSubmitting(false)
+        return
+      }
+      const err = await signUp(username, password, displayName, email)
       if (err) setError(err.message)
       else onClose()
     }
-
     setSubmitting(false)
   }
+
+  function switchMode(m) { setMode(m); setError('') }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -784,48 +792,83 @@ function AuthModal({ onClose }) {
           <span className="modal-title">{mode === 'signin' ? 'Sign in' : 'Create account'}</span>
           <button className="modal-close" onClick={onClose}>x</button>
         </div>
-        <form className="create-body" onSubmit={submit}>
-          {mode === 'signup' && (
-            <input
-              className="auth-input"
-              type="text"
-              placeholder="Display name"
-              value={displayName}
-              onChange={e => setDisplayName(e.target.value)}
-              required
-            />
-          )}
-          <input
-            className="auth-input"
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={e => setUsername(e.target.value.toLowerCase())}
-            required
-          />
-          <input
-            className="auth-input"
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            minLength={6}
-          />
+        <div className="create-body">
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {mode === 'signup' && (
+              <>
+                <input className="auth-input" type="text" placeholder="Display name"
+                  value={displayName} onChange={e => setDisplayName(e.target.value)} required />
+                <input className="auth-input" type="text" placeholder="Username (e.g. coolperson)"
+                  value={username} onChange={e => setUsername(e.target.value.toLowerCase())} required />
+              </>
+            )}
+            <input className="auth-input"
+              type={mode === 'signin' ? 'text' : 'email'}
+              placeholder={mode === 'signin' ? 'Email or username' : 'Email'}
+              value={email}
+              onChange={e => setEmail(e.target.value.trim())}
+              required />
+            <input className="auth-input" type="password" placeholder="Password"
+              value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
 
-          {error && <p className="auth-error">{error}</p>}
+            {error && <p className="auth-error">{error}</p>}
 
-          <button type="submit" className="submit-btn" disabled={submitting}>
-            {submitting ? '...' : mode === 'signin' ? 'Sign in' : 'Create account'}
-          </button>
+            <button type="submit" className="submit-btn" disabled={submitting}>
+              {submitting ? '...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            </button>
+          </form>
 
           <p className="auth-switch">
-            {mode === 'signin' ? (
-              <>No account? <button type="button" className="auth-link" onClick={() => { setMode('signup'); setError('') }}>Sign up</button></>
-            ) : (
-              <>Already have one? <button type="button" className="auth-link" onClick={() => { setMode('signin'); setError('') }}>Sign in</button></>
-            )}
+            {mode === 'signin'
+              ? <>No account? <button type="button" className="auth-link" onClick={() => switchMode('signup')}>Sign up</button></>
+              : <>Have an account? <button type="button" className="auth-link" onClick={() => switchMode('signin')}>Sign in</button></>}
           </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CompleteProfileModal() {
+  const { completeProfile, signOut } = useAuth()
+  const [username, setUsername] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    setError('')
+    if (!username.match(/^[a-z0-9_]{3,20}$/)) {
+      setError('Username: 3–20 chars, letters/numbers/underscores only.')
+      return
+    }
+    setSubmitting(true)
+    const err = await completeProfile(username, displayName || username)
+    if (err) setError(err)
+    setSubmitting(false)
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-title">One last step</span>
+        </div>
+        <form className="create-body" onSubmit={submit}>
+          <p style={{ color: 'var(--text-2)', fontSize: 13, margin: 0 }}>
+            Choose a username to complete your profile.
+          </p>
+          <input className="auth-input" type="text" placeholder="Display name (optional)"
+            value={displayName} onChange={e => setDisplayName(e.target.value)} />
+          <input className="auth-input" type="text" placeholder="Username"
+            value={username} onChange={e => setUsername(e.target.value.toLowerCase())} required />
+          {error && <p className="auth-error">{error}</p>}
+          <button type="submit" className="submit-btn" disabled={submitting}>
+            {submitting ? '...' : 'Finish'}
+          </button>
+          <button type="button" className="auth-link" style={{ fontSize: 12 }}
+            onClick={signOut}>Cancel & sign out</button>
         </form>
       </div>
     </div>
