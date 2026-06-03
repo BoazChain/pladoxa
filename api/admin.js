@@ -42,7 +42,7 @@ export default async function handler(req, res) {
         const { data, error } = await adminSupabase
           .from('opinions')
           .select('*, profiles(display_name, username)')
-          .order('created_at', { ascending: false })
+          .order('mod_score', { ascending: false, nullsFirst: false })
           .range(from, to)
         if (error) return res.status(500).json({ error: error.message })
         return res.json({ data })
