@@ -149,12 +149,14 @@ function Feed() {
 
       const scores = result.category_scores
       const maxScore = Math.max(...Object.values(scores))
+      console.log('[MOD] flagged:', result.flagged, '| max score:', maxScore.toFixed(3), '| scores:', scores)
 
-      if (maxScore >= 0.8) return { action: 'remove' }
-      if (result.flagged) return { action: 'flag' }
-      return { action: 'allow' }
-    } catch {
-      return { action: 'allow' } // don't block posts if OpenAI is down
+      if (maxScore >= 0.8) return { action: 'remove', score: maxScore }
+      if (result.flagged) return { action: 'flag', score: maxScore }
+      return { action: 'allow', score: maxScore }
+    } catch (e) {
+      console.error('[MOD] OpenAI error:', e)
+      return { action: 'allow', score: null }
     }
   }
 
@@ -177,15 +179,17 @@ function Feed() {
 
     const mod = await moderateText(data.text)
 
+    const scoreLabel = mod.score !== null ? ` (score: ${mod.score?.toFixed(3)})` : ' (no API key)'
+
     if (mod.action === 'remove') {
       await supabase.from('opinions').delete().eq('id', inserted.id)
-      showToast('Post removed — content policy violation.', 'error')
+      showToast(`🔴 Removed — policy violation${scoreLabel}`, 'error')
     } else if (mod.action === 'flag') {
       await supabase.from('opinions').update({ status: 'flagged' }).eq('id', inserted.id)
-      showToast('Opinion dropped.', 'success')
+      showToast(`🟡 Flagged for review${scoreLabel}`, 'success')
       loadOpinions()
     } else {
-      showToast('Opinion dropped.', 'success')
+      showToast(`🟢 Opinion dropped${scoreLabel}`, 'success')
       loadOpinions()
     }
   }
