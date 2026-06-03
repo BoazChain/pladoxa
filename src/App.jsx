@@ -249,8 +249,10 @@ function Feed() {
       const scores = result.category_scores
       const maxScore = Math.max(...Object.values(scores))
 
-      if (maxScore >= 0.8) return { action: 'remove', score: maxScore }
-      if (maxScore >= 0.5) return { action: 'flag', score: maxScore }
+      // Hard remove: OpenAI explicitly flagged it, or very high score
+      if (result.flagged || maxScore >= 0.7) return { action: 'remove', score: maxScore }
+      // Flag for review: moderate score on any category
+      if (maxScore >= 0.3) return { action: 'flag', score: maxScore }
       return { action: 'allow', score: maxScore }
     } catch (e) {
       return { action: 'allow', reason: 'error' }
