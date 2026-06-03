@@ -60,7 +60,7 @@ export default function Debate({ opinionId }) {
   async function loadReplies() {
     const { data, error } = await supabase
       .from('debate_replies')
-      .select('*, profiles(display_name, username, avatar_color, avatar_url)')
+      .select('*, profiles!debate_replies_user_id_fkey(display_name, username, avatar_color, avatar_url)')
       .eq('opinion_id', opinionId)
       .is('parent_reply_id', null)
       .order('created_at', { ascending: true })
@@ -72,7 +72,7 @@ export default function Debate({ opinionId }) {
     const withSubs = await Promise.all(data.map(async reply => {
       const { data: subs } = await supabase
         .from('debate_replies')
-        .select('*, profiles(display_name, username, avatar_color, avatar_url)')
+        .select('*, profiles!debate_replies_user_id_fkey(display_name, username, avatar_color, avatar_url)')
         .eq('parent_reply_id', reply.id)
         .order('created_at', { ascending: true })
       return { ...reply, subReplies: subs || [] }
