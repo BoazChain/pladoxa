@@ -65,7 +65,7 @@ export default function Debate({ opinionId }) {
       .is('parent_reply_id', null)
       .order('created_at', { ascending: true })
 
-    if (error) { console.error('[LOAD REPLIES ERROR]', error); return }
+    if (error) return
     if (!data) return
 
     // Load sub-replies for each top-level reply
@@ -94,7 +94,6 @@ export default function Debate({ opinionId }) {
     })
 
     if (error) {
-      console.error('[REPLY ERROR]', error)
       if (error.message?.includes('rate_limit_exceeded')) {
         setReplyError('Slow down — wait 10 seconds between replies.')
       } else {

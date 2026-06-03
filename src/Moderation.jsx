@@ -1,25 +1,42 @@
 import { useState, useEffect, useRef } from 'react'
-import { createClient } from '@supabase/supabase-js'
-import { supabase } from './lib/supabase'
 
-const MOD_PASSWORD = import.meta.env.VITE_MOD_PASSWORD || 'admin123'
+const MOD_PAGE_SIZE = 20
 
-// Service role client — bypasses RLS for mod actions
-const adminSupabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_SERVICE_KEY,
-  { auth: { persistSession: false, storageKey: 'admin-auth' } }
-)
+// All admin calls go through /api/admin — service key never leaves the server
+async function adminCall(password, action, params = {}) {
+  const res = await fetch('/api/admin', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${password}`,
+    },
+    body: JSON.stringify({ action, ...params }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Request failed')
+  return json
+}
 
 export default function Moderation() {
   const [authed, setAuthed] = useState(false)
+  const [password, setPassword] = useState('')
   const [pw, setPw] = useState('')
   const [pwError, setPwError] = useState('')
+  const [checking, setChecking] = useState(false)
 
-  function tryLogin(e) {
+  async function tryLogin(e) {
     e.preventDefault()
-    if (pw === MOD_PASSWORD) setAuthed(true)
-    else setPwError('Incorrect password.')
+    setChecking(true)
+    setPwError('')
+    try {
+      // Verify password by making a real API call
+      await adminCall(pw, 'fetch', { tab: 'flagged', page: 0 })
+      setPassword(pw)
+      setAuthed(true)
+    } catch {
+      setPwError('Incorrect password.')
+    }
+    setChecking(false)
   }
 
   if (!authed) {
@@ -37,7 +54,9 @@ export default function Moderation() {
               autoFocus
             />
             {pwError && <p className="auth-error">{pwError}</p>}
-            <button className="submit-btn" type="submit">Enter</button>
+            <button className="submit-btn" type="submit" disabled={checking}>
+              {checking ? 'Checking...' : 'Enter'}
+            </button>
           </form>
           <button className="auth-link" style={{ marginTop: 12, display: 'block' }} onClick={() => window.location.hash = '/'}>
             ← Back to site
@@ -47,12 +66,10 @@ export default function Moderation() {
     )
   }
 
-  return <ModDashboard />
+  return <ModDashboard password={password} />
 }
 
-const MOD_PAGE_SIZE = 20
-
-function ModDashboard() {
+function ModDashboard({ password }) {
   const [tab, setTab] = useState('flagged')
   const [opinions, setOpinions] = useState([])
   const [flagged, setFlagged] = useState([])
@@ -64,10 +81,9 @@ function ModDashboard() {
   const pageRef = useRef({ opinions: 0, debates: 0, users: 0, flagged: 0 })
   const sentinelRef = useRef(null)
   const [toast, setToast] = useState(null)
+  const [confirmState, setConfirmState] = useState(null)
 
-  useEffect(() => {
-    resetTab(tab)
-  }, [tab])
+  useEffect(() => { resetTab(tab) }, [tab])
 
   useEffect(() => {
     const el = sentinelRef.current
@@ -79,121 +95,79 @@ function ModDashboard() {
     return () => observer.disconnect()
   }, [tab, loadingMore, loading])
 
-  function resetTab(t) {
-    pageRef.current[t] = 0
-    setHasMore(h => ({ ...h, [t]: true }))
-    if (t === 'opinions') { setOpinions([]); loadOpinions(0, true) }
-    else if (t === 'flagged') { setFlagged([]); loadFlagged(0, true) }
-    else if (t === 'debates') { setDebates([]); loadDebates(0, true) }
-    else if (t === 'users') { setUsers([]); loadUsers(0, true) }
-  }
-
-  function loadMoreTab(t) {
-    if (!hasMore[t] || loadingMore) return
-    const page = pageRef.current[t]
-    if (t === 'opinions') loadOpinions(page, false)
-    else if (t === 'flagged') loadFlagged(page, false)
-    else if (t === 'debates') loadDebates(page, false)
-    else if (t === 'users') loadUsers(page, false)
-  }
-
   function showToast(msg, type = '') {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 2500)
   }
 
-  async function loadFlagged(page = 0, reset = false) {
+  function askConfirm(message, onConfirm) {
+    setConfirmState({ message, onConfirm })
+  }
+
+  function resetTab(t) {
+    pageRef.current[t] = 0
+    setHasMore(h => ({ ...h, [t]: true }))
+    if (t === 'flagged') { setFlagged([]); loadTab('flagged', 0, true) }
+    else if (t === 'opinions') { setOpinions([]); loadTab('opinions', 0, true) }
+    else if (t === 'debates') { setDebates([]); loadTab('debates', 0, true) }
+    else if (t === 'users') { setUsers([]); loadTab('users', 0, true) }
+  }
+
+  function loadMoreTab(t) {
+    if (!hasMore[t] || loadingMore) return
+    loadTab(t, pageRef.current[t], false)
+  }
+
+  async function loadTab(t, page, reset) {
     reset ? setLoading(true) : setLoadingMore(true)
-    const from = page * MOD_PAGE_SIZE
-    const { data, error } = await adminSupabase
-      .from('opinions')
-      .select('*, profiles(display_name, username)')
-      .eq('status', 'flagged')
-      .order('created_at', { ascending: false })
-      .range(from, from + MOD_PAGE_SIZE - 1)
-    if (!error && data) {
-      setFlagged(prev => reset ? data : [...prev, ...data])
-      setHasMore(h => ({ ...h, flagged: data.length === MOD_PAGE_SIZE }))
-      pageRef.current.flagged = page + 1
-    } else if (error) showToast('Failed to load flagged.', 'error')
+    try {
+      const { data } = await adminCall(password, 'fetch', { tab: t, page })
+      const setter = { flagged: setFlagged, opinions: setOpinions, debates: setDebates, users: setUsers }[t]
+      setter(prev => reset ? data : [...prev, ...data])
+      setHasMore(h => ({ ...h, [t]: data.length === MOD_PAGE_SIZE }))
+      pageRef.current[t] = page + 1
+    } catch (e) {
+      showToast('Failed to load: ' + e.message, 'error')
+    }
     reset ? setLoading(false) : setLoadingMore(false)
   }
 
   async function approveOpinion(id) {
-    const { error } = await adminSupabase.from('opinions').update({ status: 'approved' }).eq('id', id)
-    if (error) showToast('Failed to approve.', 'error')
-    else { showToast('Opinion approved ✓'); resetTab('flagged') }
-  }
-
-  async function loadOpinions(page = 0, reset = false) {
-    reset ? setLoading(true) : setLoadingMore(true)
-    const from = page * MOD_PAGE_SIZE
-    const { data, error } = await adminSupabase
-      .from('opinions')
-      .select('*, profiles(display_name, username)')
-      .order('created_at', { ascending: false })
-      .range(from, from + MOD_PAGE_SIZE - 1)
-    if (!error && data) {
-      setOpinions(prev => reset ? data : [...prev, ...data])
-      setHasMore(h => ({ ...h, opinions: data.length === MOD_PAGE_SIZE }))
-      pageRef.current.opinions = page + 1
-    } else if (error) showToast('Failed to load opinions.', 'error')
-    reset ? setLoading(false) : setLoadingMore(false)
-  }
-
-  async function loadDebates(page = 0, reset = false) {
-    reset ? setLoading(true) : setLoadingMore(true)
-    const from = page * MOD_PAGE_SIZE
-    const { data, error } = await adminSupabase
-      .from('debate_replies')
-      .select('*, profiles(display_name, username), opinions(text)')
-      .order('created_at', { ascending: false })
-      .range(from, from + MOD_PAGE_SIZE - 1)
-    if (!error && data) {
-      setDebates(prev => reset ? data : [...prev, ...data])
-      setHasMore(h => ({ ...h, debates: data.length === MOD_PAGE_SIZE }))
-      pageRef.current.debates = page + 1
-    } else if (error) showToast('Failed to load debates.', 'error')
-    reset ? setLoading(false) : setLoadingMore(false)
-  }
-
-  async function loadUsers(page = 0, reset = false) {
-    reset ? setLoading(true) : setLoadingMore(true)
-    const from = page * MOD_PAGE_SIZE
-    const { data, error } = await adminSupabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(from, from + MOD_PAGE_SIZE - 1)
-    if (!error && data) {
-      setUsers(prev => reset ? data : [...prev, ...data])
-      setHasMore(h => ({ ...h, users: data.length === MOD_PAGE_SIZE }))
-      pageRef.current.users = page + 1
-    } else if (error) showToast('Failed to load users.', 'error')
-    reset ? setLoading(false) : setLoadingMore(false)
+    try {
+      await adminCall(password, 'approve', { id })
+      showToast('Opinion approved ✓')
+      resetTab('flagged')
+    } catch (e) { showToast('Failed: ' + e.message, 'error') }
   }
 
   async function deleteOpinion(id) {
-    if (!confirm('Delete this opinion and all its replies?')) return
-    await adminSupabase.from('votes').delete().eq('opinion_id', id)
-    await adminSupabase.from('debate_replies').delete().eq('opinion_id', id)
-    const { error } = await adminSupabase.from('opinions').delete().eq('id', id)
-    if (error) { showToast('Failed to delete: ' + error.message, 'error'); console.error(error) }
-    else { showToast('Opinion deleted.'); resetTab(tab) }
+    askConfirm('Delete this opinion and all its replies?', async () => {
+      try {
+        await adminCall(password, 'delete_opinion', { id })
+        showToast('Opinion deleted.')
+        resetTab(tab)
+      } catch (e) { showToast('Failed: ' + e.message, 'error') }
+    })
   }
 
   async function deleteDebate(id) {
-    if (!confirm('Delete this reply?')) return
-    const { error } = await adminSupabase.from('debate_replies').delete().eq('id', id)
-    if (error) showToast('Failed: ' + error.message, 'error')
-    else { showToast('Reply deleted.'); resetTab('debates') }
+    askConfirm('Delete this reply?', async () => {
+      try {
+        await adminCall(password, 'delete_debate', { id })
+        showToast('Reply deleted.')
+        resetTab('debates')
+      } catch (e) { showToast('Failed: ' + e.message, 'error') }
+    })
   }
 
   async function deleteUser(id) {
-    if (!confirm('Delete this user profile?')) return
-    const { error } = await adminSupabase.from('profiles').delete().eq('id', id)
-    if (error) showToast('Failed: ' + error.message, 'error')
-    else { showToast('Profile deleted.'); resetTab('users') }
+    askConfirm('Delete this user profile?', async () => {
+      try {
+        await adminCall(password, 'delete_user', { id })
+        showToast('Profile deleted.')
+        resetTab('users')
+      } catch (e) { showToast('Failed: ' + e.message, 'error') }
+    })
   }
 
   return (
@@ -207,18 +181,9 @@ function ModDashboard() {
       </div>
 
       <div className="mod-tabs">
-        <button className={`mod-tab${tab === 'flagged' ? ' active' : ''}`} onClick={() => setTab('flagged')}>
-          🚩 Flagged ({flagged.length})
-        </button>
-        <button className={`mod-tab${tab === 'opinions' ? ' active' : ''}`} onClick={() => setTab('opinions')}>
-          Opinions ({opinions.length})
-        </button>
-        <button className={`mod-tab${tab === 'debates' ? ' active' : ''}`} onClick={() => setTab('debates')}>
-          Debates ({debates.length})
-        </button>
-        <button className={`mod-tab${tab === 'users' ? ' active' : ''}`} onClick={() => setTab('users')}>
-          Users ({users.length})
-        </button>
+        {[['flagged', `🚩 Flagged (${flagged.length})`], ['opinions', `Opinions (${opinions.length})`], ['debates', `Debates (${debates.length})`], ['users', `Users (${users.length})`]].map(([key, label]) => (
+          <button key={key} className={`mod-tab${tab === key ? ' active' : ''}`} onClick={() => setTab(key)}>{label}</button>
+        ))}
       </div>
 
       <div className="mod-body">
@@ -237,12 +202,8 @@ function ModDashboard() {
                 </div>
                 <p className="mod-text">{op.text}</p>
                 <div className="mod-row-actions">
-                  <button
-                    style={{ background: 'none', border: '1px solid #22c55e', borderRadius: 6, color: '#22c55e', fontSize: 12, padding: '4px 12px', cursor: 'pointer' }}
-                    onClick={() => approveOpinion(op.id)}
-                  >
-                    ✓ Approve
-                  </button>
+                  <button style={{ background: 'none', border: '1px solid #22c55e', borderRadius: 6, color: '#22c55e', fontSize: 12, padding: '4px 12px', cursor: 'pointer' }}
+                    onClick={() => approveOpinion(op.id)}>✓ Approve</button>
                   <button className="mod-delete-btn" onClick={() => deleteOpinion(op.id)}>Delete</button>
                 </div>
               </div>
@@ -264,9 +225,7 @@ function ModDashboard() {
                 </div>
                 <p className="mod-text">{op.text}</p>
                 <div className="mod-row-actions">
-                  <span style={{ color: 'var(--text-2)', fontSize: 12 }}>
-                    👍 {op.agrees_count} · 👎 {op.disagrees_count} · ⚡ {op.debates_count}
-                  </span>
+                  <span style={{ color: 'var(--text-2)', fontSize: 12 }}>👍 {op.agrees_count} · 👎 {op.disagrees_count} · ⚡ {op.debates_count}</span>
                   <button className="mod-delete-btn" onClick={() => deleteOpinion(op.id)}>Delete</button>
                 </div>
               </div>
@@ -325,6 +284,26 @@ function ModDashboard() {
       </div>
 
       {toast && <div className={`toast${toast.type ? ' ' + toast.type : ''}`}>{toast.msg}</div>}
+
+      {confirmState && (
+        <div className="modal-backdrop" onClick={() => setConfirmState(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 340 }}>
+            <div className="modal-head">
+              <span className="modal-title">Are you sure?</span>
+              <button className="modal-close" onClick={() => setConfirmState(null)}>x</button>
+            </div>
+            <div className="create-body" style={{ gap: 16 }}>
+              <p style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.5 }}>{confirmState.message}</p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="submit-btn" style={{ background: '#ef4444', flex: 1 }}
+                  onClick={() => { setConfirmState(null); confirmState.onConfirm() }}>Delete</button>
+                <button className="submit-btn" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-2)', flex: 1 }}
+                  onClick={() => setConfirmState(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

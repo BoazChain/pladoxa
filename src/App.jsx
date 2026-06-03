@@ -242,21 +242,17 @@ function Feed() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       })
-      console.log('[MOD] status:', res.status)
       const json = await res.json()
-      console.log('[MOD] body:', JSON.stringify(json))
       const result = json.results?.[0]
       if (!result) return { action: 'allow', reason: 'no_result' }
 
       const scores = result.category_scores
       const maxScore = Math.max(...Object.values(scores))
-      console.log('[MOD] flagged:', result.flagged, 'maxScore:', maxScore.toFixed(3), 'scores:', scores)
 
       if (maxScore >= 0.8) return { action: 'remove', score: maxScore }
       if (maxScore >= 0.5) return { action: 'flag', score: maxScore }
       return { action: 'allow', score: maxScore }
     } catch (e) {
-      console.error('[MOD] error:', e)
       return { action: 'allow', reason: 'error' }
     }
   }
@@ -283,8 +279,6 @@ function Feed() {
     setCreateOpen(false)
 
     const mod = await moderateText(data.text)
-
-    console.log('[MOD] action:', mod.action, 'score:', mod.score)
 
     if (mod.action === 'remove') {
       await supabase.from('opinions').delete().eq('id', inserted.id)

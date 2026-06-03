@@ -191,14 +191,13 @@ function AvatarSection({ profile, isMe, onUpdate }) {
       const result = modData.results?.[0]
       if (result) {
         const maxScore = Math.max(...Object.values(result.category_scores || {}))
-        console.log('[IMG MOD] flagged:', result.flagged, 'maxScore:', maxScore)
         if (maxScore >= 0.5 || result.flagged) {
           setError('Image rejected — does not meet content guidelines.')
           setUploading(false)
           return
         }
       }
-    } catch (e) { console.error('[IMG MOD]', e) }
+    } catch (e) { /* moderation unavailable, proceed */ }
 
     // Upload
     const path = `${profile.id}/avatar.jpg`
