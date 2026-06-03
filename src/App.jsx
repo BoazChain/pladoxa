@@ -246,16 +246,21 @@ function Feed() {
       const result = json.results?.[0]
       if (!result) return { action: 'allow', reason: 'no_result' }
 
+      // OpenAI's own binary judgment — always remove immediately
+      if (result.flagged) return { action: 'remove', score: 1.0 }
+
       const scores = result.category_scores || {}
       const values = Object.values(scores).filter(v => typeof v === 'number')
       const maxScore = values.length ? Math.max(...values) : 0
 
-      // Hate speech: very low threshold — catches nazi/extremist content
-      const hateScore = Math.max(scores['hate'] || 0, scores['hate/threatening'] || 0)
-      if (hateScore >= 0.05) return { action: 'remove', score: hateScore }
-
-      // OpenAI's own flagged judgment — always remove
-      if (result.flagged) return { action: 'remove', score: maxScore }
+      // Hate / harassment: any detectable signal → remove
+      const highRisk = Math.max(
+        scores['hate'] || 0,
+        scores['hate/threatening'] || 0,
+        scores['harassment'] || 0,
+        scores['harassment/threatening'] || 0,
+      )
+      if (highRisk >= 0.03) return { action: 'remove', score: highRisk }
 
       if (maxScore >= 0.7) return { action: 'remove', score: maxScore }
       if (maxScore >= 0.3) return { action: 'flag', score: maxScore }
