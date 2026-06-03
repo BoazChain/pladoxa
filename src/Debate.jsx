@@ -12,6 +12,7 @@ export default function Debate({ opinionId }) {
   const [replyText, setReplyText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [authNeeded, setAuthNeeded] = useState(false)
+  const [replyError, setReplyError] = useState('')
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -80,9 +81,10 @@ export default function Debate({ opinionId }) {
   }
 
   async function submitReply(text, parentReplyId = null, parentReply = null) {
-    if (!user) { setAuthNeeded(true); return }
-    if (!text.trim()) return
+    if (!user) { setAuthNeeded(true); return false }
+    if (!text.trim()) return false
 
+    setReplyError('')
     const { error } = await supabase.from('debate_replies').insert({
       opinion_id: opinionId,
       user_id: user.id,
@@ -91,8 +93,11 @@ export default function Debate({ opinionId }) {
     })
 
     if (error) {
+      console.error('[REPLY ERROR]', error)
       if (error.message?.includes('rate_limit_exceeded')) {
-        alert('Slow down — wait 10 seconds between replies.')
+        setReplyError('Slow down — wait 10 seconds between replies.')
+      } else {
+        setReplyError('Failed to post reply: ' + error.message)
       }
       return false
     }
@@ -204,11 +209,15 @@ export default function Debate({ opinionId }) {
               {submitting ? '...' : 'Reply'}
             </button>
           </form>
-        ) : (
+        ) : null}
+        {replyError && (
+          <div style={{ color: '#f87171', fontSize: 13, padding: '6px 4px' }}>{replyError}</div>
+        )}
+        {!user ? (
           <div className="debate-signin-prompt">
             <button className="submit-btn" onClick={() => setAuthNeeded(true)}>Sign in to join the debate</button>
           </div>
-        )}
+        ) : null}
 
         {/* Replies */}
         <div className="debate-replies">
