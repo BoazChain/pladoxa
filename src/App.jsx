@@ -39,6 +39,7 @@ function Feed() {
     const { data, error } = await supabase
       .from('opinions')
       .select(`*, profiles(display_name, username, avatar_color)`)
+      .neq('status', 'flagged')
       .order('created_at', { ascending: false })
 
     if (!error && data) {
@@ -132,20 +133,58 @@ function Feed() {
     }
   }
 
+  async function moderateText(text) {
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY
+    if (!apiKey) return { action: 'allow' }
+
+    try {
+      const res = await fetch('https://api.openai.com/v1/moderations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ input: text }),
+      })
+      const json = await res.json()
+      const result = json.results?.[0]
+      if (!result) return { action: 'allow' }
+
+      const scores = result.category_scores
+      const maxScore = Math.max(...Object.values(scores))
+
+      if (maxScore >= 0.8) return { action: 'remove' }
+      if (result.flagged) return { action: 'flag' }
+      return { action: 'allow' }
+    } catch {
+      return { action: 'allow' } // don't block posts if OpenAI is down
+    }
+  }
+
   async function create(data) {
     if (!requireAuth()) return
 
-    const { error } = await supabase.from('opinions').insert({
+    const { data: inserted, error } = await supabase.from('opinions').insert({
       user_id: user.id,
       text: data.text,
       intensity: data.intensity,
       topic: data.topic,
-    })
+    }).select().single()
 
     if (error) {
       showToast('Failed to post opinion.', 'error')
+      return
+    }
+
+    setCreateOpen(false)
+
+    const mod = await moderateText(data.text)
+
+    if (mod.action === 'remove') {
+      await supabase.from('opinions').delete().eq('id', inserted.id)
+      showToast('Post removed — content policy violation.', 'error')
+    } else if (mod.action === 'flag') {
+      await supabase.from('opinions').update({ status: 'flagged' }).eq('id', inserted.id)
+      showToast('Opinion dropped.', 'success')
+      loadOpinions()
     } else {
-      setCreateOpen(false)
       showToast('Opinion dropped.', 'success')
       loadOpinions()
     }

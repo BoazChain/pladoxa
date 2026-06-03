@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
 
 const MOD_PASSWORD = import.meta.env.VITE_MOD_PASSWORD || 'admin123'
 
@@ -50,8 +51,9 @@ export default function Moderation() {
 }
 
 function ModDashboard() {
-  const [tab, setTab] = useState('opinions')
+  const [tab, setTab] = useState('flagged')
   const [opinions, setOpinions] = useState([])
+  const [flagged, setFlagged] = useState([])
   const [debates, setDebates] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
@@ -59,6 +61,7 @@ function ModDashboard() {
 
   useEffect(() => {
     if (tab === 'opinions') loadOpinions()
+    else if (tab === 'flagged') loadFlagged()
     else if (tab === 'debates') loadDebates()
     else if (tab === 'users') loadUsers()
   }, [tab])
@@ -66,6 +69,24 @@ function ModDashboard() {
   function showToast(msg, type = '') {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 2500)
+  }
+
+  async function loadFlagged() {
+    setLoading(true)
+    const { data, error } = await adminSupabase
+      .from('opinions')
+      .select('*, profiles(display_name, username)')
+      .eq('status', 'flagged')
+      .order('created_at', { ascending: false })
+    if (!error && data) setFlagged(data)
+    else if (error) showToast('Failed to load flagged.', 'error')
+    setLoading(false)
+  }
+
+  async function approveOpinion(id) {
+    const { error } = await adminSupabase.from('opinions').update({ status: 'approved' }).eq('id', id)
+    if (error) showToast('Failed to approve.', 'error')
+    else { showToast('Opinion approved ✓'); loadFlagged() }
   }
 
   async function loadOpinions() {
@@ -138,6 +159,9 @@ function ModDashboard() {
       </div>
 
       <div className="mod-tabs">
+        <button className={`mod-tab${tab === 'flagged' ? ' active' : ''}`} onClick={() => setTab('flagged')}>
+          🚩 Flagged ({flagged.length})
+        </button>
         <button className={`mod-tab${tab === 'opinions' ? ' active' : ''}`} onClick={() => setTab('opinions')}>
           Opinions ({opinions.length})
         </button>
@@ -151,6 +175,31 @@ function ModDashboard() {
 
       <div className="mod-body">
         {loading && <div className="feed-empty">Loading...</div>}
+
+        {!loading && tab === 'flagged' && (
+          flagged.length === 0
+            ? <div className="feed-empty">No flagged opinions. All clear ✓</div>
+            : flagged.map(op => (
+              <div key={op.id} className="mod-row" style={{ borderColor: '#f59e0b' }}>
+                <div className="mod-row-meta">
+                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>🚩 FLAGGED</span>
+                  <span className="mod-user">@{op.profiles?.username ?? 'unknown'}</span>
+                  <span className="topic-badge">{op.topic}</span>
+                  <span className="card-time">{new Date(op.created_at).toLocaleString()}</span>
+                </div>
+                <p className="mod-text">{op.text}</p>
+                <div className="mod-row-actions">
+                  <button
+                    style={{ background: 'none', border: '1px solid #22c55e', borderRadius: 6, color: '#22c55e', fontSize: 12, padding: '4px 12px', cursor: 'pointer' }}
+                    onClick={() => approveOpinion(op.id)}
+                  >
+                    ✓ Approve
+                  </button>
+                  <button className="mod-delete-btn" onClick={() => deleteOpinion(op.id)}>Delete</button>
+                </div>
+              </div>
+            ))
+        )}
 
         {!loading && tab === 'opinions' && (
           opinions.length === 0
