@@ -11,7 +11,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
       },
-      body: JSON.stringify({ input: text, model: 'text-moderation-latest' }),
+      body: JSON.stringify({ input: text }),
     })
 
     if (!response.ok) {
