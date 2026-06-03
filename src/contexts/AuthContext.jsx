@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 // 'username' = username + fake email (current)
 // 'email'    = real email + username (future)
 // ─────────────────────────────────────────────
-export const AUTH_MODE = 'username'
+export const AUTH_MODE = 'email'
 
 const AuthContext = createContext(null)
 
