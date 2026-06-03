@@ -253,17 +253,17 @@ function Feed() {
       const values = Object.values(scores).filter(v => typeof v === 'number')
       const maxScore = values.length ? Math.max(...values) : 0
 
-      // Hate / harassment: any detectable signal → remove
+      // Hate / harassment: very low threshold
       const highRisk = Math.max(
         scores['hate'] || 0,
         scores['hate/threatening'] || 0,
         scores['harassment'] || 0,
         scores['harassment/threatening'] || 0,
       )
-      if (highRisk >= 0.03) return { action: 'remove', score: highRisk }
+      if (highRisk >= 0.05) return { action: 'remove', score: highRisk }
 
-      if (maxScore >= 0.7) return { action: 'remove', score: maxScore }
-      if (maxScore >= 0.3) return { action: 'flag', score: maxScore }
+      if (maxScore >= 0.8) return { action: 'remove', score: maxScore }
+      if (maxScore >= 0.5) return { action: 'flag', score: maxScore }
       return { action: 'allow', score: maxScore }
     } catch (e) {
       return { action: 'allow', reason: 'error' }
