@@ -134,15 +134,11 @@ function Feed() {
   }
 
   async function moderateText(text) {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-    console.log('[MOD] key present:', !!apiKey)
-    if (!apiKey) return { action: 'allow', reason: 'no_key' }
-
     try {
-      const res = await fetch('https://api.openai.com/v1/moderations', {
+      const res = await fetch('/api/moderate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({ input: text }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
       })
       console.log('[MOD] status:', res.status)
       const json = await res.json()
