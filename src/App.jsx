@@ -135,7 +135,8 @@ function Feed() {
 
   async function moderateText(text) {
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-    if (!apiKey) return { action: 'allow' }
+    console.log('[MOD] key present:', !!apiKey)
+    if (!apiKey) return { action: 'allow', reason: 'no_key' }
 
     try {
       const res = await fetch('https://api.openai.com/v1/moderations', {
@@ -143,20 +144,22 @@ function Feed() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({ input: text }),
       })
+      console.log('[MOD] status:', res.status)
       const json = await res.json()
+      console.log('[MOD] body:', JSON.stringify(json))
       const result = json.results?.[0]
-      if (!result) return { action: 'allow' }
+      if (!result) return { action: 'allow', reason: 'no_result' }
 
       const scores = result.category_scores
       const maxScore = Math.max(...Object.values(scores))
-      console.log('[MOD] flagged:', result.flagged, '| max score:', maxScore.toFixed(3), '| scores:', scores)
+      console.log('[MOD] flagged:', result.flagged, 'maxScore:', maxScore.toFixed(3))
 
       if (maxScore >= 0.8) return { action: 'remove', score: maxScore }
       if (result.flagged) return { action: 'flag', score: maxScore }
       return { action: 'allow', score: maxScore }
     } catch (e) {
-      console.error('[MOD] OpenAI error:', e)
-      return { action: 'allow', score: null }
+      console.error('[MOD] error:', e)
+      return { action: 'allow', reason: 'error' }
     }
   }
 
@@ -179,7 +182,7 @@ function Feed() {
 
     const mod = await moderateText(data.text)
 
-    const scoreLabel = mod.score !== null ? ` (score: ${mod.score?.toFixed(3)})` : ' (no API key)'
+    const scoreLabel = mod.score != null ? ` (score: ${mod.score.toFixed(3)})` : ` (${mod.reason ?? 'error'})`
 
     if (mod.action === 'remove') {
       await supabase.from('opinions').delete().eq('id', inserted.id)
