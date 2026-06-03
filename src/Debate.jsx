@@ -120,14 +120,24 @@ export default function Debate({ opinionId }) {
     if (!user) { setAuthNeeded(true); return }
     if (ownerId === user.id) return // no self-likes
     const liked = likedIds.has(replyId)
+    const delta = liked ? -1 : 1
+
+    // Optimistic UI update
+    setLikedIds(prev => {
+      const n = new Set(prev)
+      liked ? n.delete(replyId) : n.add(replyId)
+      return n
+    })
+    setReplies(prev => prev.map(r => {
+      if (r.id === replyId) return { ...r, likes_count: Math.max(0, (r.likes_count || 0) + delta) }
+      return { ...r, subReplies: r.subReplies?.map(s => s.id === replyId ? { ...s, likes_count: Math.max(0, (s.likes_count || 0) + delta) } : s) }
+    }))
+
     if (liked) {
       await supabase.from('reply_likes').delete().eq('reply_id', replyId).eq('user_id', user.id)
-      setLikedIds(prev => { const n = new Set(prev); n.delete(replyId); return n })
     } else {
       await supabase.from('reply_likes').insert({ reply_id: replyId, user_id: user.id })
-      setLikedIds(prev => new Set(prev).add(replyId))
     }
-    loadReplies()
   }
 
   if (loading) return (

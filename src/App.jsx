@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
 import './App.css'
 
-const TOPICS = ['All', 'Tech', 'Society', 'Food', 'Philosophy', 'Entertainment', 'Culture', 'Politics', 'Science']
+const TOPICS = ['All', 'Tech', 'Society', 'Food', 'Philosophy', 'Entertainment', 'Culture', 'Politics', 'Science', 'Sports', 'Animals']
 
 export default function App() {
   return (
@@ -27,6 +27,7 @@ function Feed() {
   const [debateId, setDebateId] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [toast, setToast] = useState(null)
+  const [confirmState, setConfirmState] = useState(null)
   const [fetching, setFetching] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -66,7 +67,6 @@ function Feed() {
 
     if (sort === 'new') q = q.order('created_at', { ascending: false })
     else if (sort === 'top') q = q.order('agrees_count', { ascending: false }).order('disagrees_count', { ascending: false })
-    else if (sort === 'controversial') q = q.order('debates_count', { ascending: false })
 
     return q
   }
@@ -100,15 +100,19 @@ function Feed() {
     setLoadingMore(false)
   }
 
-  async function deleteOpinion(id) {
-    if (!confirm('Delete this opinion? The debate thread will stay but your text will be removed.')) return
-    const { error } = await supabase
-      .from('opinions')
-      .update({ status: 'deleted', text: null })
-      .eq('id', id)
-      .eq('user_id', user.id)
-    if (error) showToast('Failed to delete.', 'error')
-    else { showToast('Opinion deleted.'); resetAndLoad() }
+  function deleteOpinion(id) {
+    setConfirmState({
+      message: 'Delete this opinion? The debate thread will stay but your text will be removed.',
+      onConfirm: async () => {
+        const { error } = await supabase
+          .from('opinions')
+          .update({ status: 'deleted', text: null })
+          .eq('id', id)
+          .eq('user_id', user.id)
+        if (error) showToast('Failed to delete.', 'error')
+        else { showToast('Opinion deleted.'); resetAndLoad() }
+      }
+    })
   }
 
   async function loadOpinions() {
@@ -378,7 +382,7 @@ function Feed() {
               ))}
             </div>
             <div className="sort-row">
-              {[['new', '✨ New'], ['top', '🔥 Top'], ['controversial', '⚡ Controversial']].map(([val, label]) => (
+              {[['new', '✨ New'], ['top', '🔥 Top']].map(([val, label]) => (
                 <button
                   key={val}
                   className={`sort-btn${sort === val ? ' active' : ''}`}
@@ -429,6 +433,13 @@ function Feed() {
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} />}
 
       {toast && <div className={`toast${toast.type ? ' ' + toast.type : ''}`}>{toast.msg}</div>}
+      {confirmState && (
+        <ConfirmModal
+          message={confirmState.message}
+          onConfirm={() => { setConfirmState(null); confirmState.onConfirm() }}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
     </div>
   )
 }
@@ -700,6 +711,26 @@ function DebateModal({ op, onClose, onReply, loggedIn, onAuthNeeded }) {
               {submitting ? 'Posting...' : loggedIn ? 'Enter Debate' : 'Sign in to debate'}
             </button>
           </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 340 }}>
+        <div className="modal-head">
+          <span className="modal-title">Are you sure?</span>
+          <button className="modal-close" onClick={onCancel}>x</button>
+        </div>
+        <div className="create-body" style={{ gap: 16 }}>
+          <p style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.5 }}>{message}</p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="submit-btn" style={{ background: '#ef4444', flex: 1 }} onClick={onConfirm}>Delete</button>
+            <button className="submit-btn" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-2)', flex: 1 }} onClick={onCancel}>Cancel</button>
+          </div>
         </div>
       </div>
     </div>
