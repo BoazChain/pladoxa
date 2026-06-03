@@ -6,6 +6,7 @@ export default function Debate({ opinionId }) {
   const { user, profile } = useAuth()
   const [opinion, setOpinion] = useState(null)
   const [replies, setReplies] = useState([])
+  const [likedIds, setLikedIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [replyText, setReplyText] = useState('')
@@ -15,6 +16,7 @@ export default function Debate({ opinionId }) {
 
   useEffect(() => {
     loadAll()
+    if (user) loadLikedIds()
 
     // Realtime subscription
     const channel = supabase
@@ -29,6 +31,14 @@ export default function Debate({ opinionId }) {
 
     return () => supabase.removeChannel(channel)
   }, [opinionId])
+
+  async function loadLikedIds() {
+    const { data } = await supabase
+      .from('reply_likes')
+      .select('reply_id')
+      .eq('user_id', user.id)
+    if (data) setLikedIds(new Set(data.map(r => r.reply_id)))
+  }
 
   async function loadAll() {
     setLoading(true)
@@ -97,9 +107,17 @@ export default function Debate({ opinionId }) {
     setSubmitting(false)
   }
 
-  async function likeReply(replyId, current) {
+  async function likeReply(replyId, ownerId) {
     if (!user) { setAuthNeeded(true); return }
-    await supabase.from('debate_replies').update({ likes_count: current + 1 }).eq('id', replyId)
+    if (ownerId === user.id) return // no self-likes
+    const liked = likedIds.has(replyId)
+    if (liked) {
+      await supabase.from('reply_likes').delete().eq('reply_id', replyId).eq('user_id', user.id)
+      setLikedIds(prev => { const n = new Set(prev); n.delete(replyId); return n })
+    } else {
+      await supabase.from('reply_likes').insert({ reply_id: replyId, user_id: user.id })
+      setLikedIds(prev => new Set(prev).add(replyId))
+    }
     loadReplies()
   }
 
@@ -195,6 +213,7 @@ export default function Debate({ opinionId }) {
               reply={reply}
               user={user}
               profile={profile}
+              likedIds={likedIds}
               onReply={submitReply}
               onLike={likeReply}
               onAuthNeeded={() => setAuthNeeded(true)}
@@ -210,7 +229,7 @@ export default function Debate({ opinionId }) {
   )
 }
 
-function ReplyCard({ reply, user, profile, onReply, onLike, onAuthNeeded }) {
+function ReplyCard({ reply, user, profile, likedIds, onReply, onLike, onAuthNeeded }) {
   const [showReplies, setShowReplies] = useState(false)
   const [replying, setReplying] = useState(false)
   const [text, setText] = useState('')
@@ -245,8 +264,13 @@ function ReplyCard({ reply, user, profile, onReply, onLike, onAuthNeeded }) {
           </div>
           <p className="reply-text">{reply.text}</p>
           <div className="reply-actions">
-            <button className="reply-action-btn" onClick={() => onLike(reply.id, reply.likes_count ?? 0)}>
-              ❤️ {reply.likes_count > 0 ? reply.likes_count : ''}
+            <button
+              className="reply-action-btn"
+              onClick={() => onLike(reply.id, reply.user_id)}
+              disabled={user?.id === reply.user_id}
+              style={{ color: likedIds?.has(reply.id) ? '#f43f5e' : undefined, opacity: user?.id === reply.user_id ? 0.4 : 1 }}
+            >
+              {likedIds?.has(reply.id) ? '❤️' : '🤍'} {reply.likes_count > 0 ? reply.likes_count : ''}
             </button>
             <button className="reply-action-btn" onClick={() => { if (!user) { onAuthNeeded(); return } setReplying(r => !r) }}>
               💬 Reply
@@ -305,8 +329,13 @@ function ReplyCard({ reply, user, profile, onReply, onLike, onAuthNeeded }) {
                 </div>
                 <p className="reply-text">{sub.text}</p>
                 <div className="reply-actions">
-                  <button className="reply-action-btn" onClick={() => onLike(sub.id, sub.likes_count ?? 0)}>
-                    ❤️ {sub.likes_count > 0 ? sub.likes_count : ''}
+                  <button
+                    className="reply-action-btn"
+                    onClick={() => onLike(sub.id, sub.user_id)}
+                    disabled={user?.id === sub.user_id}
+                    style={{ color: likedIds?.has(sub.id) ? '#f43f5e' : undefined, opacity: user?.id === sub.user_id ? 0.4 : 1 }}
+                  >
+                    {likedIds?.has(sub.id) ? '❤️' : '🤍'} {sub.likes_count > 0 ? sub.likes_count : ''}
                   </button>
                 </div>
               </div>

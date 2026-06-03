@@ -58,7 +58,7 @@ function Feed() {
   function buildQuery(from, to) {
     let q = supabase
       .from('opinions')
-      .select(`*, profiles(display_name, username, avatar_color)`)
+      .select(`*, profiles(display_name, username, avatar_color, avatar_url)`)
       .neq('status', 'flagged')
       .range(from, to)
 

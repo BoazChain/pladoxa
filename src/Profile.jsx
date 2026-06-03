@@ -127,7 +127,11 @@ export default function Profile({ username }) {
           <div className="feed-empty">No opinions yet.</div>
         )}
         {opinions.map(op => (
-          <div key={op.id} className="opinion-card" style={{ marginBottom: 12 }}>
+          <div
+            key={op.id}
+            className="opinion-card profile-opinion-card"
+            onClick={() => window.location.hash = `/debate/${op.id}`}
+          >
             <div className="card-badges" style={{ marginBottom: 8 }}>
               <span className={`intensity-badge ${op.intensity}`}>
                 {op.intensity === 'hard' ? '🔥 Hard Take' : '💭 Soft Take'}
@@ -140,6 +144,7 @@ export default function Profile({ username }) {
               <span>👍 {op.agrees_count}</span>
               <span>👎 {op.disagrees_count}</span>
               <span>⚡ {op.debates_count}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: 11 }}>Open debate →</span>
             </div>
           </div>
         ))}

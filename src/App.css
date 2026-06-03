@@ -957,3 +957,13 @@
 .sub-reply-form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .sub-replies { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
 .sub-reply { display: flex; gap: 10px; padding-left: 8px; border-left: 2px solid var(--border); }
+
+.profile-opinion-card {
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+  margin-bottom: 12px;
+}
+.profile-opinion-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
