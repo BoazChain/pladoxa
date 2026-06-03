@@ -16,7 +16,9 @@ export default function App() {
 const PAGE_SIZE = 20
 
 function Feed() {
-  const { user, profile, loading: authLoading, signOut } = useAuth()
+  const { user, profile, loading: authLoading, signOut, unreadCount, markAllRead } = useAuth()
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifs, setNotifs] = useState([])
   const [opinions, setOpinions] = useState([])
   const [userVotes, setUserVotes] = useState({})
   const [filter, setFilter] = useState('All')
@@ -131,9 +133,23 @@ function Feed() {
         handle: row.profiles?.username ?? 'unknown',
         initials: initials(row.profiles?.display_name ?? '?'),
         color: row.profiles?.avatar_color ?? '#8b5cf6',
+        avatarUrl: row.profiles?.avatar_url ?? null,
       },
       replies: [],
     }
+  }
+
+  async function openNotifs() {
+    setNotifOpen(v => !v)
+    if (!user) return
+    const { data } = await supabase
+      .from('notifications')
+      .select('*, from_profile:from_user_id(display_name, username), opinions(text)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (data) setNotifs(data)
+    markAllRead()
   }
 
   function showToast(msg, type = '') {
@@ -184,6 +200,22 @@ function Feed() {
       if (unvoting) showToast('Vote removed.')
       else if (type === 'agree') showToast('You agreed with this.', 'agree')
       else showToast('You disagreed with this.', 'disagree')
+
+      // Notify opinion owner (skip if unvoting or voting on own opinion)
+      if (!unvoting) {
+        const op = opinions.find(o => o.id === opinionId)
+        if (op) {
+          const { data: opData } = await supabase.from('opinions').select('user_id').eq('id', opinionId).single()
+          if (opData && opData.user_id !== user.id) {
+            await supabase.from('notifications').insert({
+              user_id: opData.user_id,
+              from_user_id: user.id,
+              type,
+              opinion_id: opinionId,
+            })
+          }
+        }
+      }
     }
   }
 
@@ -308,6 +340,11 @@ function Feed() {
         onNew={() => user ? setCreateOpen(true) : setAuthOpen(true)}
         onAuth={() => setAuthOpen(true)}
         onSignOut={signOut}
+        unreadCount={unreadCount}
+        onBell={openNotifs}
+        notifOpen={notifOpen}
+        notifs={notifs}
+        onCloseNotifs={() => setNotifOpen(false)}
       />
 
       <div className="layout">
@@ -382,7 +419,7 @@ function Feed() {
   )
 }
 
-function Navbar({ profile, onNew, onAuth, onSignOut }) {
+function Navbar({ profile, onNew, onAuth, onSignOut, unreadCount, onBell, notifOpen, notifs, onCloseNotifs }) {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
@@ -391,11 +428,19 @@ function Navbar({ profile, onNew, onAuth, onSignOut }) {
         <div className="navbar-actions">
           {profile ? (
             <>
-              <div className="nav-profile">
+              <div className="nav-profile" style={{ cursor: 'pointer' }} onClick={() => window.location.hash = `/profile/${profile.username}`}>
                 <div className="avatar avatar-sm" style={{ background: profile.avatar_color }}>
-                  {initials(profile.display_name)}
+                  {profile.avatar_url
+                    ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    : initials(profile.display_name)}
                 </div>
                 <span className="nav-username">@{profile.username}</span>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <button className="sign-out-btn" onClick={onBell} style={{ fontSize: 16, padding: '6px 10px' }}>
+                  🔔{unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                </button>
+                {notifOpen && <NotifDropdown notifs={notifs} onClose={onCloseNotifs} />}
               </div>
               <button className="new-opinion-btn" onClick={onNew}>+ New Opinion</button>
               <button className="sign-out-btn" onClick={onSignOut}>Sign out</button>
@@ -412,6 +457,34 @@ function Navbar({ profile, onNew, onAuth, onSignOut }) {
   )
 }
 
+function NotifDropdown({ notifs, onClose }) {
+  const labels = { debate: '⚡ debated your opinion', reply: '💬 replied to you', agree: '👍 agreed with you', disagree: '👎 disagreed with you' }
+
+  return (
+    <div className="notif-dropdown" onClick={e => e.stopPropagation()}>
+      <div className="notif-head">
+        <span>Notifications</span>
+        <button className="modal-close" onClick={onClose}>x</button>
+      </div>
+      {notifs.length === 0
+        ? <div className="notif-empty">Nothing yet.</div>
+        : notifs.map(n => (
+          <div key={n.id} className={`notif-row${n.read ? '' : ' unread'}`}
+            onClick={() => { if (n.opinion_id) window.location.hash = `/debate/${n.opinion_id}`; onClose() }}>
+            <span className="notif-text">
+              <strong>{n.from_profile?.display_name ?? 'Someone'}</strong> {labels[n.type] ?? 'interacted with you'}
+            </span>
+            {n.opinions?.text && (
+              <span className="notif-preview">"{n.opinions.text.slice(0, 60)}{n.opinions.text.length > 60 ? '…' : ''}"</span>
+            )}
+            <span className="notif-time">{timeAgo(n.created_at)}</span>
+          </div>
+        ))
+      }
+    </div>
+  )
+}
+
 function OpinionCard({ op, vote, onVote, onDebate }) {
   const total = op.agrees + op.disagrees
   const pct = total > 0 ? Math.round((op.agrees / total) * 100) : 50
@@ -419,8 +492,12 @@ function OpinionCard({ op, vote, onVote, onDebate }) {
   return (
     <article className="opinion-card">
       <div className="card-top">
-        <div className="card-user-row">
-          <div className="avatar avatar-md" style={{ background: op.user.color }}>{op.user.initials}</div>
+        <div className="card-user-row" style={{ cursor: 'pointer' }} onClick={() => window.location.hash = `/profile/${op.user.handle}`}>
+          <div className="avatar avatar-md" style={{ background: op.user.color }}>
+            {op.user.avatarUrl
+              ? <img src={op.user.avatarUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+              : op.user.initials}
+          </div>
           <div className="card-user-info">
             <span className="card-name">{op.user.name}</span>
             <span className="card-handle">@{op.user.handle}</span>
@@ -464,7 +541,7 @@ function OpinionCard({ op, vote, onVote, onDebate }) {
           <span className="btn-count">{op.disagrees.toLocaleString()}</span>
           <span className="btn-label">Disagree</span>
         </button>
-        <button className="action-btn debate-btn" onClick={onDebate}>
+        <button className="action-btn debate-btn" onClick={() => window.location.hash = `/debate/${op.id}`}>
           <span className="btn-icon">⚡</span>
           <span className="btn-count">{op.debates.toLocaleString()}</span>
           <span className="btn-label">Debate</span>
