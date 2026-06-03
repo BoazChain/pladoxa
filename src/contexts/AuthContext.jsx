@@ -72,12 +72,25 @@ export function AuthProvider({ children }) {
 
   // ─── SIGN UP (email + username) ────────────────────────────────
   async function signUp(username, password, displayName, email) {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { username, display_name: displayName } },
-    })
-    return error
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) return error
+
+    // Upsert full profile — more reliable than doing it inside a DB trigger
+    if (data.user) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: data.user.id,
+          username,
+          display_name: displayName || username,
+          avatar_color: '#8b5cf6',
+          real_email: email,
+          auth_mode: 'email',
+        }, { onConflict: 'id' })
+      if (profileError) return profileError
+    }
+
+    return null
   }
 
   // ─── SIGN IN (email OR username, works for legacy accounts) ────
